@@ -38,7 +38,7 @@ Máy ảo Ubuntu 22.04 LTS (4 vCPU, 4–8 GB RAM) đã cài:
 ```
 sudo apt update
 sudo apt install -y git nano python3-pip mininet openvswitch-switch tshark iperf3 hping3 mosquitto nftables iproute2
-sudo pip3 install scapy paho-mqtt scikit-learn openpyxl
+sudo pip3 install -r requirements.txt
 ```
 
 Kiểm tra: `mn --version` hiện số phiên bản. `openpyxl` chỉ cần cho tùy chọn `--check-plan`.
@@ -63,6 +63,23 @@ Tùy chọn:
 | `--bw 200` | Đổi băng thông mỗi liên kết (Mbps) |
 | `--delay 2ms` | Đổi độ trễ mỗi liên kết |
 | `--check-plan file.xlsx` | Đối chiếu IP với file Excel rồi thoát (không cần Mininet, không cần root) |
+| `--check-env` | Kiểm tra môi trường Mininet/Open vSwitch trước khi chạy |
+| `--reset` | Reset lại Open vSwitch / Mininet state trước khi build lại |
+
+Để reset Mininet rồi dựng mạng lại trong cùng một lệnh:
+
+```
+sudo python3 topology.py --reset --test
+```
+
+Để tạo dữ liệu cho Edge AI, trước tiên capture lưu lượng trong môi trường Mininet được phép thử nghiệm, sau đó trích xuất đặc trưng từ PCAP:
+
+```
+sudo tshark -i any -w traffic.pcap
+python3 traffic_features.py --pcap traffic.pcap --label normal --csv ai_features.csv
+```
+
+Chạy lại với `--label attack` cho PCAP của kịch bản tấn công tương ứng. CSV gồm thời điểm, IP/port, protocol, số packet, tổng byte, kích thước packet trung bình và nhãn. Chỉ gán nhãn đúng với kịch bản thực tế đã capture; script này phân tích PCAP có sẵn, không phát lưu lượng.
 
 Thoát Mininet: gõ `exit` tại dấu nhắc `mininet>`.
 

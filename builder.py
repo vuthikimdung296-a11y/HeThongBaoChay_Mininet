@@ -4,7 +4,8 @@ from mininet.net import Mininet
 from mininet.node import OVSBridge
 from mininet.link import TCLink
 
-from config import (N_FLOORS, CAMS_PER_FLOOR, SRV_IP, ATK_IP)
+from config import (N_FLOORS, CAMS_PER_FLOOR, SRV_IP, ATK_IP,
+                    SENSOR_SUBNET, CAM_SUBNET)
 from ip_plan import sensor_ips, camera_ip
 from nodes import LinuxRouter
 
@@ -28,13 +29,15 @@ def build_network(bw, delay):
     for f in range(1, N_FLOORS + 1):
         name = 'hs%02d' % f
         ips = sensor_ips(f)
-        h = net.addHost(name, ip=ips[0] + '/23', defaultRoute='via 10.0.10.1')
+        h = net.addHost(name, ip=ips[0] + '/' + SENSOR_SUBNET.split('/')[1],
+                        defaultRoute='via 10.0.10.1')
         net.addLink(h, s1, intfName1=name + '-eth0', intfName2='s1-' + name, **lk)
         sensors.append(name)
         aliases[name] = ips[1:]            # 29 IP con lai gan lam IP phu
     for n in range(1, N_FLOORS * CAMS_PER_FLOOR + 1):
         name = 'cam%02d' % n
-        h = net.addHost(name, ip=camera_ip(n) + '/24', defaultRoute='via 10.0.20.1')
+        h = net.addHost(name, ip=camera_ip(n) + '/' + CAM_SUBNET.split('/')[1],
+                        defaultRoute='via 10.0.20.1')
         net.addLink(h, s1, intfName1=name + '-eth0', intfName2='s1-' + name, **lk)
         cams.append(name)
     return net, sensors, cams, aliases

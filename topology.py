@@ -17,11 +17,31 @@ Cau truc file (sua loi o dau thi mo file do):
     verify.py     ping kiem tra Test 1-4
 """
 import argparse
+import importlib.util
 import os
+import shutil
+import subprocess
 import sys
 
 import config
 from ip_plan import check_plan
+
+
+def check_environment():
+    missing = [cmd for cmd in ('mn', 'ovs-vsctl', 'ip') if shutil.which(cmd) is None]
+    if importlib.util.find_spec('mininet') is None:
+        missing.append('Python module mininet')
+    if missing:
+        raise SystemExit('Thieu tien ich: %s. Chay: sudo apt install mininet openvswitch-switch iproute2' % ', '.join(missing))
+    print('Environment OK: mn, ovs-vsctl, ip da co san.')
+    return True
+
+
+def reset_environment():
+    result = subprocess.run(['mn', '-c'], check=False)
+    if result.returncode:
+        raise SystemExit('mn -c that bai (ma loi %d)' % result.returncode)
+    print('Da don dep Mininet state cu.')
 
 
 def main():
@@ -33,10 +53,18 @@ def main():
     ap.add_argument('--bw', type=int, default=config.LINK_BW, help='bang thong moi lien ket (Mbps)')
     ap.add_argument('--delay', default=config.LINK_DELAY, help='do tre moi lien ket, vi du 1ms')
     ap.add_argument('--check-plan', metavar='XLSX', help='doi chieu IP voi file Excel roi thoat')
+    ap.add_argument('--check-env', action='store_true', help='kiem tra moi truong Mininet/Open vSwitch truoc khi chay')
+    ap.add_argument('--reset', action='store_true', help='dung lai va reset Open vSwitch / state Mininet truoc khi build')
     args = ap.parse_args()
 
     if args.check_plan:
         sys.exit(0 if check_plan(args.check_plan) else 1)
+    if args.check_env:
+        sys.exit(0 if check_environment() else 1)
+    if args.reset and (not hasattr(os, 'geteuid') or os.geteuid() != 0):
+        sys.exit('Can chay --reset bang root: sudo python3 topology.py --reset')
+    if args.reset:
+        reset_environment()
     try:
         from mininet.cli import CLI
         from mininet.log import setLogLevel, info

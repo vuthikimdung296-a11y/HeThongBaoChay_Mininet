@@ -6,6 +6,19 @@ from mininet.log import info
 from config import (VLAN_SENSOR, VLAN_CAM, VLAN_SRV, GW_VLAN_IP, GW_EXT_IP)
 
 
+def _iface_exists(node, iface):
+    return bool(node.cmd('ip -o link show %s 2>/dev/null' % iface).strip())
+
+
+def _has_ipv4(node, iface, ip):
+    out = node.cmd('ip -4 -o addr show dev %s 2>/dev/null' % iface)
+    expected = ip.split('/')[0]
+    tokens = out.split()
+    return any(token == 'inet' and index + 1 < len(tokens)
+               and tokens[index + 1].split('/')[0] == expected
+               for index, token in enumerate(tokens))
+
+
 def configure_ovs(net, sensors, cams):
     """Gan tag VLAN tren cong truy cap, trunk 10,20,30 tren cong len gateway."""
     s1 = net.get('s1')
@@ -31,17 +44,23 @@ def configure_gateway(net):
     gw.cmd('sysctl -w net.ipv4.conf.gw-eth1.rp_filter=0')
     for vid, ip in GW_VLAN_IP.items():
         sub = 'gw-eth0.%d' % vid
-        gw.cmd('ip link add link gw-eth0 name %s type vlan id %d' % (sub, vid))
-        gw.cmd('ip addr add %s dev %s' % (ip, sub))
+        if not _iface_exists(gw, sub):
+            gw.cmd('ip link add link gw-eth0 name %s type vlan id %d' % (sub, vid))
+        if not _has_ipv4(gw, sub, ip):
+            gw.cmd('ip addr add %s dev %s' % (ip, sub))
         gw.cmd('ip link set %s up' % sub)
-    gw.cmd('ip addr add %s dev gw-eth1' % GW_EXT_IP)
+    if not _has_ipv4(gw, 'gw-eth1', GW_EXT_IP):
+        gw.cmd('ip addr add %s dev gw-eth1' % GW_EXT_IP)
     gw.cmd('ip link set gw-eth1 up')
 
 
 def configure_aliases(net, aliases):
     """29 IP phu tren moi host cam bien (de moi client MQTT bind dung IP cam bien)."""
     for name, ips in aliases.items():
-        net.get(name).cmd(' ; '.join('ip addr add %s/23 dev %s-eth0' % (ip, name) for ip in ips))
+        host = net.get(name)
+        for ip in ips:
+            if not _has_ipv4(host, name + '-eth0', ip + '/23'):
+                host.cmd('ip addr add %s/23 dev %s-eth0' % (ip, name))
 
 
 def configure_options(net, no_syncookies):

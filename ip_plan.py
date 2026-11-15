@@ -3,20 +3,29 @@
 import ipaddress
 import re
 
-from config import N_FLOORS, SENSORS_PER_FLOOR, CAMS_PER_FLOOR
+from config import (N_FLOORS, SENSORS_PER_FLOOR, CAMS_PER_FLOOR,
+                    SENSOR_SUBNET, CAM_SUBNET)
 
 
 def sensor_ips(floor):
     """30 IP cam bien cua tang `floor` (1..10).
     Moi tang chiem mot khoi 32 dia chi bat dau tu 10.0.10.0 + 32*floor; cam bien dung .1 ... .30 cua khoi.
     Tang 1: 10.0.10.33-62.  Tang 8: 10.0.11.1-30."""
-    base = int(ipaddress.ip_address('10.0.10.0')) + 32 * floor
+    network = ipaddress.ip_network(SENSOR_SUBNET)
+    base = int(network.network_address) + 32 * floor
+    last_address = base + SENSORS_PER_FLOOR
+    if floor < 1 or floor > N_FLOORS or last_address > int(network.broadcast_address):
+        raise ValueError('Tang %d vuot khoi dia chi cam bien %s' % (floor, SENSOR_SUBNET))
     return [str(ipaddress.ip_address(base + i)) for i in range(1, SENSORS_PER_FLOOR + 1)]
 
 
 def camera_ip(n):
     """IP camera thu n (1..20): 10.0.20.(10+n)."""
-    return '10.0.20.%d' % (10 + n)
+    network = ipaddress.ip_network(CAM_SUBNET)
+    address = int(network.network_address) + 10 + n
+    if n < 1 or n > N_FLOORS * CAMS_PER_FLOOR or address >= int(network.broadcast_address):
+        raise ValueError('Camera %d vuot khoi dia chi camera %s' % (n, CAM_SUBNET))
+    return str(ipaddress.ip_address(address))
 
 
 def check_plan(xlsx_path):

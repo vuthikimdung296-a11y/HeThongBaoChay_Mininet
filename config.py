@@ -10,6 +10,12 @@ LINK_DELAY = '1ms'         # tre moi lien ket   (so do: [1] ms)
 
 VLAN_SENSOR, VLAN_CAM, VLAN_SRV = 10, 20, 30
 
+# Subnet / khoi dia chi theo VLAN
+SENSOR_SUBNET = '10.0.10.0/23'
+CAM_SUBNET = '10.0.20.0/24'
+SRV_SUBNET = '10.0.30.0/24'
+OUTER_SUBNET = '192.168.100.0/24'
+
 # Dia chi Gateway tren tung VLAN (eth0.10 / eth0.20 / eth0.30) va cong ngoai eth1
 GW_VLAN_IP = {VLAN_SENSOR: '10.0.10.1/23',
               VLAN_CAM:    '10.0.20.1/24',
