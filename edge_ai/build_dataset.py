@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""build_dataset.py - Gan nhan cho cua so 1 giay dua tren NHAT KY tan cong (khong gan 1 nhan cho ca file pcap).
+
+Dau vao:
+  --features : CSV tu collect_metadata.py (cot window_start + dac trung; co the co cot 'episode')
+  --log      : CSV nhat ky tan cong, cot: start,end,attack_type[,episode]   (start/end = epoch giay)
+               Tai thoi diem chay tan cong (hping3...), ghi start/end vao file nay.
+Quy tac nhan cho cua so [t, t+1):
+  - khong giao voi doan tan cong nao        -> nhan 0 (binh thuong)
+  - nam tron trong mot doan tan cong        -> nhan 1 (tan cong) + attack_type
+  - giao mot phan (cua so o bien start/end) -> BO (nhan khong chac chan)
+Dau ra: CSV co them cot label, attack_type, episode.
+"""
+import argparse
+import csv
+
+
+def load_log(path):
+    out = []
+    for r in csv.DictReader(open(path)):
+        out.append((r.get('episode', ''), float(r['start']), float(r['end']), r['attack_type']))
+    return out
+
+
+def label_window(t, episode, log, win=1.0):
+    """Tra ve (label, attack_type) hoac None neu cua so bi bo."""
+    overlap_total, kind = 0.0, 'normal'
+    for ep, s, e, k in log:
+        if ep != episode:
+            continue
+        ov = min(t + win, e) - max(t, s)
+        if ov > 0:
+            overlap_total += ov
+            kind = k
+    if overlap_total <= 1e-9:
+        return 0, 'normal'
+    if overlap_total >= win - 1e-9:
+        return 1, kind
+    return None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--features', required=True)
+    ap.add_argument('--log', required=True)
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--episode', default='', help='ten luot chay, neu CSV dac trung khong co cot episode')
+    a = ap.parse_args()
+
+    log = load_log(a.log)
+    rows_in = list(csv.DictReader(open(a.features)))
+    fields = [c for c in rows_in[0].keys() if c != 'episode'] + ['label', 'attack_type', 'episode']
+    kept = dropped = 0
+    with open(a.out, 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for r in rows_in:
+            ep = r.get('episode', a.episode)
+            res = label_window(float(r['window_start']), ep, log)
+            if res is None:
+                dropped += 1
+                continue
+            r = {k: v for k, v in r.items() if k != 'episode'}
+            r.update(label=res[0], attack_type=res[1], episode=ep)
+            w.writerow(r)
+            kept += 1
+    print('Giu %d cua so, bo %d cua so o bien doan tan cong -> %s' % (kept, dropped, a.out))
+
+
+if __name__ == '__main__':
+    main()

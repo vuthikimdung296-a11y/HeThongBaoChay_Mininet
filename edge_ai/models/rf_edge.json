@@ -1,0 +1,13 @@
+{
+  "features": [
+    "packet_rate",
+    "byte_rate",
+    "syn_count",
+    "ip_dispersion"
+  ],
+  "window_seconds": 1.0,
+  "classes": {
+    "0": "binh_thuong",
+    "1": "tan_cong"
+  }
+}

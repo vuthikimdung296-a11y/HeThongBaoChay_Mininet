@@ -1,0 +1,20 @@
+{
+  "test_attack_episodes": 29,
+  "test_normal_episodes": 19,
+  "missed_attack_episodes": 0,
+  "detection_delay_mean_s": 2.358620594287741,
+  "detection_delay_median_s": 1.5999999046325684,
+  "detection_delay_max_s": 12.599999904632568,
+  "coverage_mean": 0.9649327878433664,
+  "coverage_median": 1.0,
+  "episodes_coverage_below_50pct": 1,
+  "smoothed_normal_windows": 3846,
+  "smoothed_normal_windows_alarmed": 0,
+  "smoothed_fpr": 0.0,
+  "release_tail_windows": 145,
+  "release_tail_windows_alarmed": 56,
+  "attack_episodes_with_flapping": 0,
+  "normal_episodes_with_false_alarm": 0,
+  "latency_mean_ms": 3.7258478019098042,
+  "latency_p95_ms": 4.9613490500291855
+}
