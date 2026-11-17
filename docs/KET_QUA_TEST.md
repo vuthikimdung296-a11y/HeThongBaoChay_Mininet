@@ -6,7 +6,7 @@ Ubuntu: ____________________
 
 ## Cach su dung
 
-- Chay cac muc 1-4 trong terminal Ubuntu, tai thu muc chua `topology.py`.
+- Chay cac muc 1-4 trong terminal Ubuntu, tai thu muc chua `Network`.
 - Muc 3 chi chay neu co file Excel quy hoach IP. Neu khong co, ghi `Khong ap dung`.
 - De chay muc 5-10, don Mininet mot lan bang `sudo mn -c`, sau do chay `sudo python3 topology.py`. Nhap cac lenh tuong ung tai dau nhac `mininet>`.
 - Chi danh dau Dat khi ket qua thuc te dung voi mong doi. Neu can bo sung minh chung, chen anh vao muc tuong ung.
@@ -48,7 +48,7 @@ sudo python3 topology.py --check-env
 **Lenh (terminal Ubuntu):**
 
 ```bash
-python3 topology.py --check-plan quy_hoach_IP_VLAN_v2.xlsx
+python3 topology.py --check-plan ../docs/quy_hoach_IP_VLAN_v2.xlsx,
 ```
 
 Thay ten file neu file Excel co ten/duong dan khac.
