@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    import paho.mqtt.client as mqtt
+    import paho.mqtt.client as mqtt  # type: ignore[import-not-found]
 except ImportError as exc:
     raise SystemExit("Missing paho-mqtt. Install python3-paho-mqtt.") from exc
 
@@ -30,7 +30,21 @@ NETWORK_DIR = HERE.parent / "Network"
 if not NETWORK_DIR.is_dir():
     raise RuntimeError(f"Network directory not found: {NETWORK_DIR}")
 sys.path.insert(0, str(NETWORK_DIR))
-from ip_plan import sensor_ips  # noqa: E402
+
+try:
+    from ip_plan import sensor_ips  # type: ignore[import-not-found]
+except ImportError:
+    import importlib.util
+
+    ip_plan_path = NETWORK_DIR / "ip_plan.py"
+    if not ip_plan_path.is_file():
+        raise RuntimeError(f"ip_plan.py not found: {ip_plan_path}")
+    spec = importlib.util.spec_from_file_location("ip_plan", ip_plan_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load ip_plan from {ip_plan_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sensor_ips = module.sensor_ips
 
 BROKER = os.environ.get("MQTT_BROKER", "10.0.30.10")
 PORT = int(os.environ.get("MQTT_PORT", "1883"))
