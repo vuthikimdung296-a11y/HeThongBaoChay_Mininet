@@ -12,6 +12,8 @@ This module generates the four traffic groups consumed by the Gateway QoS rules:
 `run_scenario.py` is imported from the live Mininet CLI and orchestrates the broker,
 iperf3 server, 10 sensor-floor generators, 20 camera streams, RTT probe and optional
 bounded attack. It writes CSV/JSON/log artifacts under `traffic/results/`.
+Each camera gets its own iperf3 server port (5201–5220) so all 20 streams can run
+concurrently without competing for one server session.
 
 ## Dependencies
 

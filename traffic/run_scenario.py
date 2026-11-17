@@ -100,17 +100,23 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
     else:
         gw.cmd(f"bash {QOS_SCRIPT} stop")
 
-    # Start the actual MQTT broker and iperf3 receiver in the server namespace.
-    broker = _start_service(srv, ["mosquitto", "-p", "1883"])
-    iperf_server = _start_service(srv, ["iperf3", "-s", "-p", "5201"])
-    _wait_port(srv, 1883)
-    _wait_port(srv, 5201)
-
     processes = []
     log_handles = []
+    iperf_servers = []
+    broker = None
     ping = None
     started_iso = datetime.now(timezone.utc).isoformat()
     try:
+        # Use a dedicated iperf3 listener per camera so simultaneous clients do
+        # not contend for a single server session.
+        broker = _start_service(srv, ["mosquitto", "-p", "1883"])
+        _wait_port(srv, 1883)
+        for number in range(1, 21):
+            port = 5200 + number
+            server = _start_service(srv, ["iperf3", "-s", "-p", str(port)])
+            iperf_servers.append(server)
+            _wait_port(srv, port)
+
         # Ten hosts, each representing 30 logical sensors with unique IP aliases.
         for floor in range(1, 11):
             host = net.get(f"hs{floor:02d}")
@@ -118,20 +124,25 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                    "--duration", str(duration), "--telemetry-interval", str(telemetry_interval)]
             if floor == 1:
                 cmd += ["--alarm-after", "10", "--alarm-index", "1"]
-            log = (RESULTS / f"mqtt_hs{floor:02d}.log").open("w", encoding="utf-8")
+            log_path = RESULTS / f"mqtt_hs{floor:02d}.log"
+            log = log_path.open("w", encoding="utf-8")
             log_handles.append(log)
-            processes.append(host.popen(cmd, stdout=log, stderr=subprocess.STDOUT))
+            processes.append((f"MQTT hs{floor:02d} ({log_path})",
+                              host.popen(cmd, stdout=log, stderr=subprocess.STDOUT)))
 
         # Twenty independent camera hosts, each capped at the requested UDP rate.
         for number in range(1, 21):
             host = net.get(f"cam{number:02d}")
             camera_id = f"cam{number:02d}"
+            port = 5200 + number
             cmd = [sys.executable, str(TRAFFIC / "camera_iperf.py"), "--camera-id", camera_id,
-                   "--target", "10.0.30.10", "--bandwidth", camera_bandwidth,
+                   "--target", "10.0.30.10", "--port", str(port), "--bandwidth", camera_bandwidth,
                    "--duration", str(duration), "--output-dir", str(RESULTS)]
-            log = (RESULTS / f"{camera_id}.log").open("w", encoding="utf-8")
+            log_path = RESULTS / f"{camera_id}.log"
+            log = log_path.open("w", encoding="utf-8")
             log_handles.append(log)
-            processes.append(host.popen(cmd, stdout=log, stderr=subprocess.STDOUT))
+            processes.append((f"camera {camera_id} ({log_path})",
+                              host.popen(cmd, stdout=log, stderr=subprocess.STDOUT)))
 
         # RTT probe from a sensor VLAN host to the server, sampled every 200 ms.
         ping = net.get("hs01").popen(["ping", "-D", "-i", "0.2", "-w", str(duration), "10.0.30.10"],
@@ -147,19 +158,26 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
             if spoof:
                 # Explicit double opt-in is required by attack.py; spoof only inside lab namespaces.
                 attack_cmd += ["--spoof", "--allow-spoof"]
-            attack = atk.popen(attack_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            processes.append(attack)
+            attack_log_path = RESULTS / f"attack_{scenario}.log"
+            attack_log = attack_log_path.open("w", encoding="utf-8")
+            log_handles.append(attack_log)
+            attack = atk.popen(attack_cmd, stdout=attack_log, stderr=subprocess.STDOUT)
+            processes.append((f"attack generator ({attack_log_path})", attack))
 
         # Wait for generators and probes; camera/attack scripts have their own bounded lifetime.
-        for proc in processes:
+        for label, proc in processes:
             try:
-                proc.wait(timeout=duration + 30)
-            except subprocess.TimeoutExpired:
+                returncode = proc.wait(timeout=duration + 30)
+            except subprocess.TimeoutExpired as exc:
                 proc.terminate()
                 try:
                     proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                    proc.wait()
+                raise RuntimeError(f"{label} timed out; inspect its traffic log") from exc
+            if returncode != 0:
+                raise RuntimeError(f"{label} exited with status {returncode}; inspect its traffic log")
         ping_out, _ = ping.communicate(timeout=duration + 10)
         ping_metrics = _ping_metrics(ping_out)
         row = {"timestamp_utc": started_iso, "scenario": scenario, "duration_s": duration,
@@ -171,19 +189,20 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         (RESULTS / f"ping_{scenario}.txt").write_text(ping_out, encoding="utf-8")
         print("Scenario complete:", row)
         print("Camera metrics:", RESULTS / "camera_metrics.csv")
-        print("Attack event log:", RESULTS / "events.csv")
+        print("Attack event log:", RESULTS / "attack_events.csv")
         return row
     finally:
-        for proc in processes:
+        for _, proc in processes:
             if proc.poll() is None:
                 proc.terminate()
-        for proc in (iperf_server, broker):
-            if proc.poll() is None:
+        for proc in [broker, *iperf_servers]:
+            if proc is not None and proc.poll() is None:
                 proc.terminate()
                 try:
                     proc.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                    proc.wait()
         for handle in log_handles:
             handle.close()
         if ping is not None and ping.poll() is None:

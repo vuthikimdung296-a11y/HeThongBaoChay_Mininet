@@ -84,7 +84,10 @@ check_qos() {
   local qdiscs
   qdiscs="$(tc qdisc show dev "$IFACE")"
   for handle in 110: 111: 112: 113:; do
-    grep -q "handle $handle" <<<"$qdiscs" || { echo "ERROR: missing child qdisc $handle" >&2; return 1; }
+    grep -qE "qdisc fq_codel ${handle}([[:space:]]|$)" <<<"$qdiscs" || {
+      echo "ERROR: missing FQ-CoDel qdisc $handle" >&2
+      return 1
+    }
   done
   echo "PASS: HTB root, four classes, four fw filters, four FQ-CoDel leaves and nft mark table are present."
 }

@@ -13,7 +13,7 @@ HeThongBaoChay_Mininet/
 ├── README.md              # file này
 ├── requirements.txt
 ├── .gitignore
-├── network/               # Tổ 2: dựng mạng ảo (7 file Python)
+├── Network/               # Tổ 2: dựng mạng ảo (7 file Python)
 ├── traffic/               # Tổ 3: sinh lưu lượng bình thường và tấn công
 ├── qos/                   # QoS (HTB), script đo RTT/mất gói
 ├── firewall/              # nftables, script thêm/gỡ luật
@@ -26,7 +26,7 @@ HeThongBaoChay_Mininet/
     └── test/              # KET_QUA_TEST.md và screenshots/
 ```
 
-Mỗi thư mục (trừ `network/` và `docs/`) có `README.md` riêng ghi: script nào làm gì, cách chạy, đầu vào, đầu ra, người phụ trách.
+Mỗi thư mục (trừ `Network/` và `docs/`) có `README.md` riêng ghi: script nào làm gì, cách chạy, đầu vào, đầu ra, người phụ trách.
 
 ## 2. Mạng gồm những gì
 
@@ -39,9 +39,9 @@ Mỗi thư mục (trừ `network/` và `docs/`) có `README.md` riêng ghi: scri
 | `atk` | 1 | Kẻ tấn công ở mạng ngoài | 192.168.100.100/24 | không |
 | `s1` | 1 | Switch Open vSwitch | không cần IP | cổng truy cập gắn tag, cổng lên `gw` là trunk |
 
-Tổng cộng 34 nút và 33 liên kết. Mọi liên kết: 100 Mbps, trễ 1 ms (sửa trong `network/config.py`). Máy chủ nối vào OVS (không nối thẳng Gateway), nên lưu lượng tới `srv` đi qua trunk Gateway–OVS hai lần (router-on-a-stick). Đoạn Gateway → OVS là nút cổ chai; lưu lượng tấn công từ `atk` cũng đi qua `gw` rồi qua cùng nút cổ chai này.
+Tổng cộng 34 nút và 33 liên kết. Mọi liên kết: 100 Mbps, trễ 1 ms (sửa trong `Network/config.py`). Máy chủ nối vào OVS (không nối thẳng Gateway), nên lưu lượng tới `srv` đi qua trunk Gateway–OVS hai lần (router-on-a-stick). Đoạn Gateway → OVS là nút cổ chai; lưu lượng tấn công từ `atk` cũng đi qua `gw` rồi qua cùng nút cổ chai này.
 
-## 3. Các file trong `network/`
+## 3. Các file trong `Network/`
 
 | File | Nội dung | Sửa khi |
 |---|---|---|
@@ -53,7 +53,7 @@ Tổng cộng 34 nút và 33 liên kết. Mọi liên kết: 100 Mbps, trễ 1 m
 | `configure.py` | VLAN trên OVS, sub-interface Gateway, IP phụ, tùy chọn SYN | Lỗi VLAN, định tuyến, IP |
 | `verify.py` | Ping kiểm tra tự động (Test 1, 1b, 2, 2b, 3, 3b, 5 và kiểm tra OVS ở Test 4) | Thêm phép thử |
 
-Bảy file này phải nằm chung thư mục `network/`. Chỉ Tổ 2 sửa các file này; nhóm khác cần đổi tham số mạng thì báo Tổ 2.
+Bảy file này phải nằm chung thư mục `Network/`. Chỉ Tổ 2 sửa các file này; nhóm khác cần đổi tham số mạng thì báo Tổ 2.
 
 ## 4. Yêu cầu và cài đặt
 
@@ -70,16 +70,16 @@ Thư viện Python cho giai đoạn sau (Tổ 3, Edge AI), cài bằng `apt` đ�
 sudo apt install -y python3-scapy python3-paho-mqtt python3-sklearn
 ```
 
-Không dùng `sudo pip3 install -r requirements.txt` trên Ubuntu đời mới vì thường báo `externally-managed-environment`. Nếu cần môi trường ảo: `python3 -m venv --system-site-packages venv`, và khi chạy phải gọi `sudo venv/bin/python network/topology.py`.
+Không dùng `sudo pip3 install -r requirements.txt` trên Ubuntu đời mới vì thường báo `externally-managed-environment`. Nếu cần môi trường ảo: `python3 -m venv --system-site-packages venv`, và khi chạy phải gọi `sudo venv/bin/python Network/topology.py`.
 
-Kiểm tra: `mn --version` hiện số phiên bản, hoặc `sudo python3 network/topology.py --check-env` hiện `Environment OK`.
+Kiểm tra: `mn --version` hiện số phiên bản, hoặc `sudo python3 Network/topology.py --check-env` hiện `Environment OK`.
 
 ## 5. Cách chạy mạng ảo
 
-Chạy trong thư mục `network/`:
+Chạy trong thư mục `Network/`:
 
 ```
-cd network
+cd Network
 sudo mn -c                       # dọn lần chạy trước (nên chạy trước mỗi lần)
 sudo python3 topology.py         # dựng mạng, vào dấu nhắc mininet>
 sudo python3 topology.py --test  # tự ping kiểm tra, in bảng kết quả, rồi vào mininet>
@@ -96,7 +96,7 @@ sudo python3 topology.py --test  # tự ping kiểm tra, in bảng kết quả, 
 | `--check-env` | Kiểm tra môi trường Mininet/Open vSwitch rồi thoát |
 | `--reset` | Chạy `mn -c` dọn trạng thái cũ trước khi dựng mạng (cần root) |
 
-Đối chiếu IP với Excel (từ thư mục `network/`):
+Đối chiếu IP với Excel (từ thư mục `Network/`):
 
 ```
 python3 topology.py --check-plan ../docs/quy_hoach_IP_VLAN_v2.xlsx
@@ -134,7 +134,7 @@ Tên host là `hs01`, `cam01` (có số 0). Lệnh hữu ích khi gỡ lỗi: `g
 ## 7. Lưu ý cho các tổ làm tiếp
 
 - Cổng MQTT là 1883 (8883 nếu bật TLS). `topology.py` chưa khởi động Mosquitto; Tổ 3 tự chạy trên `srv`.
-- Mỗi client MQTT cảm biến nên gắn đúng IP bằng `bind_address`; danh sách IP lấy từ `network/ip_plan.py` (`sensor_ips(tầng)`) hoặc sheet "Danh sách cảm biến".
+- Mỗi client MQTT cảm biến nên gắn đúng IP bằng `bind_address`; danh sách IP lấy từ `Network/ip_plan.py` (`sensor_ips(tầng)`) hoặc sheet "Danh sách cảm biến".
 - `TCLink` đã gắn sẵn hàng đợi `tc` (`htb` và `netem`) lên các giao diện. Trước khi dựng HTB riêng trên `gw-eth0`: `gw tc qdisc del dev gw-eth0 root` (nhớ tạo lại độ trễ 1 ms nếu muốn giữ). Kích thước hàng đợi mặc định có thể ảnh hưởng RTT khi bị tấn công; ghi lại cấu hình khi báo cáo số đo.
 - Chiều lên (OVS → Gateway) cũng giới hạn 100 Mbps; nếu video gây nghẽn chiều này thì cần hàng đợi ở cổng `s1-gw`.
 - Gateway đã tắt `rp_filter` nên tấn công giả mạo IP nguồn đi qua được; nftables cần tính đến việc IP nguồn không đáng tin.
@@ -156,7 +156,7 @@ Tên host là `hs01`, `cam01` (có số 0). Lệnh hữu ích khi gỡ lỗi: `g
 
 ## 8. Quy tắc làm việc nhóm
 
-1. Mỗi người chỉ sửa trong thư mục của mình; `network/` chỉ Tổ 2 sửa.
+1. Mỗi người chỉ sửa trong thư mục của mình; `Network/` chỉ Tổ 2 sửa.
 2. `git pull` trước khi `git push`; commit ngắn gọn, nói rõ đã đổi gì.
 3. Tên file và thư mục không dấu, không khoảng trắng.
 4. Không đưa lên GitHub: file `.pcap`, ID và mật khẩu máy ảo, thông tin nhạy cảm. CSV kết quả nhỏ đặt trong `experiments/results/`.
