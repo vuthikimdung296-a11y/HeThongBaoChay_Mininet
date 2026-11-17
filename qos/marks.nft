@@ -1,18 +1,22 @@
+#!/usr/sbin/nft -f
+# Classify forwarded IPv4 traffic at the Gateway ingress. The mark survives
+# routing and is consumed by the tc fw classifier on gw-eth0.30 egress.
+# Mark map: 0x10=fire alarm, 0x11=sensor telemetry, 0x12=camera, 0x13=untrusted.
 table inet qos {
     chain prerouting {
-        type filter hook prerouting priority -150; policy accept;
+        type filter hook prerouting priority mangle; policy accept;
 
-        # 1. Mạng ngoài (gw-eth1) - Nơi Hacker xả rác -> Mark 3 (Thấp nhất/Nghi ngờ)
-        iifname "gw-eth1" meta mark set 3
+        # Fail closed into the lowest-priority class unless a trusted class matches.
+        meta mark set 0x13
 
-        # 2. Mạng Camera (VLAN 20: gw-eth0.20) -> Mark 2
-        iifname "gw-eth0.20" meta mark set 2
+        # Internet/attacker-facing interface: always untrusted, regardless of spoofed source IP.
+        iifname "gw-eth1" meta mark set 0x13
 
-        # 3. Mạng Cảm biến (VLAN 10: gw-eth0.10)
-        # Nếu là bản tin BÁO CHÁY khẩn cấp (Nhận diện qua DSCP 48) -> Mark 0 (Quyền tối thượng)
-        iifname "gw-eth0.10" ip dscp 48 meta mark set 0
-        
-        # Nếu là bản tin Telemetry nhiệt độ định kỳ -> Mark 1
-        iifname "gw-eth0.10" ip dscp != 48 meta mark set 1
+        # Camera VLAN.
+        iifname "gw-eth0.20" meta mark set 0x12
+
+        # Sensor VLAN: only DSCP 48 (CS6) is treated as an emergency alarm.
+        iifname "gw-eth0.10" ip dscp 48 meta mark set 0x10
+        iifname "gw-eth0.10" ip dscp != 48 meta mark set 0x11
     }
 }
