@@ -1,0 +1,18 @@
+table inet qos {
+    chain prerouting {
+        type filter hook prerouting priority -150; policy accept;
+
+        # 1. Mạng ngoài (gw-eth1) - Nơi Hacker xả rác -> Mark 3 (Thấp nhất/Nghi ngờ)
+        iifname "gw-eth1" meta mark set 3
+
+        # 2. Mạng Camera (VLAN 20: gw-eth0.20) -> Mark 2
+        iifname "gw-eth0.20" meta mark set 2
+
+        # 3. Mạng Cảm biến (VLAN 10: gw-eth0.10)
+        # Nếu là bản tin BÁO CHÁY khẩn cấp (Nhận diện qua DSCP 48) -> Mark 0 (Quyền tối thượng)
+        iifname "gw-eth0.10" ip dscp 48 meta mark set 0
+        
+        # Nếu là bản tin Telemetry nhiệt độ định kỳ -> Mark 1
+        iifname "gw-eth0.10" ip dscp != 48 meta mark set 1
+    }
+}
