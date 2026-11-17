@@ -3,10 +3,10 @@
 """Orchestrate traffic from the live Mininet CLI.
 
 Usage at `mininet>` prompt (network must already be running):
-  py __import__('sys').path.insert(0, '..')
-  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='normal', duration=60)
-  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=1000)
-  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=1000)
+  py from traffic.run_scenario import run_scenario
+  py run_scenario(net, scenario='normal', duration=60)
+  py run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=1000)
+  py run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=1000)
 """
 from __future__ import annotations
 import csv
@@ -109,7 +109,12 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
     try:
         # Use a dedicated iperf3 listener per camera so simultaneous clients do
         # not contend for a single server session.
-        broker = _start_service(srv, ["mosquitto", "-p", "1883"])
+        # Mosquitto 2.x mac dinh CHI nhan ket noi tu chinh may no (localhost) va tu choi nac danh,
+        # nen cac host hs01..hs10 se bi tu choi. Phai chay kem file cau hinh nay.
+        srv.cmd("pkill -x mosquitto 2>/dev/null; sleep 0.5")
+        Path("/tmp/mosq_scenario.conf").write_text(
+            "listener 1883 0.0.0.0\nallow_anonymous true\n", encoding="utf-8")
+        broker = _start_service(srv, ["mosquitto", "-c", "/tmp/mosq_scenario.conf"])
         _wait_port(srv, 1883)
         for number in range(1, 21):
             port = 5200 + number
@@ -177,6 +182,11 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                     proc.wait()
                 raise RuntimeError(f"{label} timed out; inspect its traffic log") from exc
             if returncode != 0:
+                m = re.search(r"\((.*)\)$", label)
+                if m and Path(m.group(1)).is_file():
+                    lines = Path(m.group(1)).read_text(encoding="utf-8", errors="replace").splitlines()
+                    print(f"--- 15 dong cuoi cua log {m.group(1)} ---")
+                    print("\n".join(lines[-15:]))
                 raise RuntimeError(f"{label} exited with status {returncode}; inspect its traffic log")
         ping_out, _ = ping.communicate(timeout=duration + 10)
         ping_metrics = _ping_metrics(ping_out)
