@@ -13,12 +13,32 @@ Dau ra: CSV co them cot label, attack_type, episode.
 """
 import argparse
 import csv
+import datetime
+
+
+def _parse_time(val):
+    """Chuyển đổi chuỗi ISO 8601 hoặc số epoch sang float timestamp."""
+    try:
+        return float(val)
+    except ValueError:
+        # Xử lý chuỗi ISO 8601 từ traffic/attack.py
+        dt = datetime.datetime.fromisoformat(val.replace('Z', '+00:00'))
+        return dt.timestamp()
 
 
 def load_log(path):
     out = []
     for r in csv.DictReader(open(path)):
-        out.append((r.get('episode', ''), float(r['start']), float(r['end']), r['attack_type']))
+        # Hỗ trợ cả start/end (epoch) và start_utc/end_utc (ISO 8601 từ traffic/attack.py)
+        start_val = r.get('start', r.get('start_utc'))
+        end_val = r.get('end', r.get('end_utc'))
+        if start_val is None or end_val is None:
+            continue
+        s = _parse_time(start_val)
+        e = _parse_time(end_val)
+        kind = r.get('attack_type', r.get('type', 'attack'))
+        ep = r.get('episode', '')
+        out.append((ep, s, e, kind))
     return out
 
 

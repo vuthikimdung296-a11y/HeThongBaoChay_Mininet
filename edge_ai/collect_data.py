@@ -4,22 +4,11 @@
 collect_data.py - Thu thập và tiền xử lý gói tin mạng theo cửa sổ 1 giây tại Gateway
 Phục vụ đề tài: Hệ thống cảnh báo cháy thông minh - Mô phỏng Mininet & Phòng chống DDoS
 
-Chức năng:
-  1. Bắt gói tin trực tiếp tại Gateway (gw-eth0, gw-eth1) theo cửa sổ 1 giây (AF_PACKET / Scapy).
-  2. Đọc file pcap offline và gom cửa sổ 1 giây.
-  3. Tích hợp kịch bản luồng mạng Tổ 3:
-     - Lưu lượng bình thường (Normal): 300 cảm biến MQTT + 20 luồng camera UDP (~80 Mbps)
-     - Tấn công TCP SYN Flood (1000, 5000, 20000 pps; có/không giả mạo IP nguồn)
-     - Tấn công UDP Flood (2000, 5000, 12000 pps; gói 1066 byte; có/không giả mạo IP nguồn)
-  4. Trích xuất 4 đặc trưng lõi + 3 đặc trưng mở rộng từ Header Metadata:
-     - packet_rate (gói/giây)
-     - byte_rate (bytes/giây)
-     - syn_count (số gói SYN không ACK/giây)
-     - ip_dispersion (số lượng IP nguồn duy nhất/giây)
-     - src_entropy (độ hỗn loạn phân bố IP nguồn)
-     - udp_ratio (tỷ lệ lưu lượng UDP)
-     - avg_pkt_len (chiều dài gói tin trung bình)
-  5. Đồng bộ hóa mốc thời gian tấn công, gán nhãn tự động và xuất file dataset_real.csv.
+Ghi chú quan trọng (theo hướng dẫn Tổ 2):
+  - Chế độ sinh ma trận kịch bản (--synth-pipeline) tạo DỮ LIỆU TỔNG HỢP để thử nghiệm đường ống kỹ thuật.
+    KHÔNG PHẢI dữ liệu bắt thực tế từ Mininet. Báo cáo chính thức phải dùng dữ liệu bắt từ Mininet qua
+    collect_metadata.py.
+  - Chế độ bắt gói trực tiếp (--live) sử dụng AF_PACKET / Scapy để ghi nhận gói tin thực tế.
 """
 
 import argparse
@@ -308,7 +297,7 @@ def capture_live(ifaces, duration, output_csv, log_file=None):
 
 def main():
     parser = argparse.ArgumentParser(description="collect_data.py - Thu thập gói tin và tạo dataset cửa sổ 1 giây")
-    parser.add_argument('--out', default='dataset_real.csv', help='File CSV đầu ra (mặc định: dataset_real.csv)')
+    parser.add_argument('--out', default='dataset_synth_pipeline.csv', help='File CSV đầu ra (mặc định: dataset_synth_pipeline.csv - dữ liệu tổng hợp thử nghiệm)')
     parser.add_argument('--live', action='store_true', help='Bắt gói trực tiếp trên giao diện Gateway')
     parser.add_argument('--iface', nargs='+', default=['gw-eth0', 'gw-eth1'], help='Các interface bắt gói (gw-eth0, gw-eth1)')
     parser.add_argument('--duration', type=int, default=120, help='Thời lượng bắt gói trực tiếp (giây)')

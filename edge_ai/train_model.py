@@ -184,15 +184,15 @@ def draw_feature_importance(importances, feat_names, output_path):
 
 
 def find_dataset(custom_path=None):
-    """Tìm đường dẫn file dataset phù hợp."""
+    """Tìm đường dẫn file dataset phù hợp (ưu tiên dữ liệu đo thật từ Mininet)."""
     candidates = [
         custom_path,
-        os.path.join(CURRENT_DIR, "dataset_real.csv"),
-        os.path.join(CURRENT_DIR, "edge_ai", "data", "dataset_real.csv"),
-        os.path.join(CURRENT_DIR, "edge_ai", "data", "dataset.csv"),
+        os.path.join(CURRENT_DIR, "edge_ai", "data", "dataset_mininet.csv"),
+        os.path.join(CURRENT_DIR, "dataset_mininet.csv"),
+        os.path.join(CURRENT_DIR, "dataset_synth_pipeline.csv"),
+        os.path.join(CURRENT_DIR, "edge_ai", "data", "dataset_synth_pipeline.csv"),
+        "dataset_synth_pipeline.csv",
         "dataset_real.csv",
-        "edge_ai/data/dataset_real.csv",
-        "edge_ai/data/dataset.csv"
     ]
     for p in candidates:
         if p and os.path.isfile(p):
@@ -335,7 +335,8 @@ def main():
     results['model_size_kb'] = model_size_kb
     print(f"\n[✓] Đã xuất mô hình AI: {primary_model_path} ({model_size_kb} KB)")
 
-    # Lưu file cấu hình mô hình
+    # Lưu file cấu hình mô hình (ghi nhận phiên bản scikit-learn theo yêu cầu A7)
+    import sklearn
     config_data = {
         'model_file': 'edge_ai_model.joblib',
         'features': rf4_feats,
@@ -343,7 +344,9 @@ def main():
         'classes': {'0': 'normal', '1': 'attack'},
         'threshold': 0.5,
         'consecutive_windows_to_block': 2,
-        'reaction_time_guarantee_sec': 2.0
+        'reaction_time_guarantee_sec': 2.0,
+        'sklearn_version': sklearn.__version__,
+        'is_synthetic_pipeline_data': 'synth' in os.path.basename(data_file)
     }
     with open(os.path.join(out_dir, 'edge_ai_model.json'), 'w') as f:
         json.dump(config_data, f, indent=2, ensure_ascii=False)

@@ -43,8 +43,10 @@ def main():
             det.on_window(r)
         lat += det.latency_ms
         starts = [t for t, s in det.events if s == 1]
-        t_a = float(log.loc[ep, 'start']) if ep.startswith('D') else None
-        t_b = float(log.loc[ep, 'end']) if ep.startswith('D') else None
+        # Xác định lượt tấn công dựa vào việc episode có trong log hay không (C1 - không dùng ep.startswith('D'))
+        is_attack_ep = (ep in log.index) and (str(log.loc[ep, 'attack_type']).lower() != 'normal' if 'attack_type' in log.columns else True)
+        t_a = float(log.loc[ep, 'start']) if is_attack_ep else None
+        t_b = float(log.loc[ep, 'end']) if is_attack_ep else None
         in_atk = [st for (w, st) in det.states if t_a is not None and w >= t_a and w + 1 <= t_b]
         out_all = [(w, st) for (w, st) in det.states if t_a is None or w + 1 <= t_a or w >= t_b]
         # 'duoi nha luat': 5 giay dau sau khi tan cong ket thuc, nhan van TAN CONG do can k_off cua so binh thuong lien tiep
@@ -56,7 +58,7 @@ def main():
             coverage.append(sum(in_atk) / len(in_atk))   # ti le cua so trong doan tan cong duoc gan nhan TAN CONG
         norm_total += len(out_atk)
         norm_alarm += sum(out_atk)
-        if ep.startswith('D'):
+        if is_attack_ep:
             n_attack += 1
             t_atk = float(log.loc[ep, 'start'])
             first = [t for t in starts if t >= t_atk - 1]
