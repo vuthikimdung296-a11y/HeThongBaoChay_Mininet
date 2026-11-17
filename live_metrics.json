@@ -1,0 +1,24 @@
+{
+  "timestamp": 1794937270.5658371,
+  "datetime": "2026-11-18 00:41:10",
+  "status": "ATTACK",
+  "raw_prediction": 1,
+  "attack_probability": 1.0,
+  "attack_type": "TCP SYN Flood (Spoofed)",
+  "reaction_time_sec": 1.0,
+  "reaction_speed_check": "<= 3s (DAT YEU CAU)",
+  "features": {
+    "packet_rate": 13450.0,
+    "byte_rate": 10150000.0,
+    "syn_count": 5000,
+    "ip_dispersion": 89
+  },
+  "firewall": {
+    "backend": "iptables",
+    "blocked_ips": [
+      "192.168.100.100"
+    ],
+    "active_rules_count": 1,
+    "last_action": "MONITORING"
+  }
+}
