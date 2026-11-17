@@ -20,3 +20,10 @@ ENV/
 # Temporary and log files
 *.tmp
 /tmp/
+*.log
+live_metrics.json
+react_times.csv
+
+# Network packet captures (khong push vao repo)
+*.pcap
+*.pcapng

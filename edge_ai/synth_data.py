@@ -30,7 +30,7 @@ CAPTURE_CAP_PPS = 60000   # nang luc bat goi toi da cua may ao (vuot qua thi mat
 EP_LEN = 120              # do dai moi luot chay (giay)
 ATK_START, ATK_END = 30.4, 90.7   # tan cong chay tu giay 30.4 toi 90.7 (le 0.x de co cua so o bien)
 
-ATTACKS = ['syn_flood', 'syn_flood_spoof', 'udp_flood', 'udp_flood_spoof', 'icmp_flood']
+ATTACKS = ['syn_flood', 'syn_flood_spoof', 'udp_flood', 'udp_flood_spoof']
 
 
 def entropy_from(counts_n_src_normal, normal_pkts, atk_pkts, atk_srcs):
@@ -75,10 +75,9 @@ def normal_window(rng, profile):
 
 
 def attack_contribution(rng, kind, frac, ramp):
-    """Dong gop cua tan cong trong cua so, frac = ti le cua so nam trong doan tan cong (0..1)."""
-    lo, hi = {'syn_flood': (200, 60000), 'syn_flood_spoof': (200, 60000),
-              'udp_flood': (300, 9000), 'udp_flood_spoof': (300, 9000),
-              'icmp_flood': (300, 30000)}[kind]
+    """Dong gop cua tan cong trong cua so (gioi han phu hop voi MAX_RATE_PPS = 5000 cua traffic/attack.py)."""
+    lo, hi = {'syn_flood': (500, 5000), 'syn_flood_spoof': (500, 5000),
+              'udp_flood': (500, 5000), 'udp_flood_spoof': (500, 5000)}[kind]
     return lo, hi
 
 
