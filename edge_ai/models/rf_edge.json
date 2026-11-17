@@ -1,4 +1,5 @@
 {
+  "model_file": "edge_ai_model.joblib",
   "features": [
     "packet_rate",
     "byte_rate",
@@ -7,7 +8,10 @@
   ],
   "window_seconds": 1.0,
   "classes": {
-    "0": "binh_thuong",
-    "1": "tan_cong"
-  }
+    "0": "normal",
+    "1": "attack"
+  },
+  "threshold": 0.5,
+  "consecutive_windows_to_block": 2,
+  "reaction_time_guarantee_sec": 2.0
 }

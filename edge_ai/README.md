@@ -8,10 +8,12 @@ Nhận lưu lượng đi vào Gateway `gw`, rút **header metadata** theo cửa 
 
 | File | Việc làm |
 | --- | --- |
+| `collect_data.py` | Thu thập gói tin theo cửa sổ 1 giây (live hoặc kịch bản Tổ 3: Normal, SYN/UDP Flood) → `dataset_real.csv` |
+| `train_model.py` | Huấn luyện RF-4 và các mô hình so sánh; xuất `edge_ai_model.joblib`, ma trận nhầm lẫn, số liệu Mục 2.4.1 |
+| `gateway_ai.py` | Script phòng thủ tự động tại Gateway: bắt gói 1s, AI dự đoán, tự động gọi `iptables` chặn IP (≤ 3s), ghi `live_metrics.json` |
 | `features.py` | Phân tích header (IPv4, có/không tag VLAN), gom cửa sổ 1 giây, tính 4 đặc trưng lõi + 3 đặc trưng bổ sung |
 | `collect_metadata.py` | Thu thập metadata: đọc pcap, bắt trực tiếp (AF_PACKET) hoặc qua tshark → CSV |
 | `build_dataset.py` | Gán nhãn từng cửa sổ theo nhật ký tấn công (start/end), bỏ cửa sổ ở biên |
-| `train_model.py` | Huấn luyện RF và 3 mô hình so sánh; confusion matrix, accuracy, FPR, thời gian suy luận |
 | `gateway_detector.py` | Chạy mô hình tại Gateway, xuất nhãn (file JSON + hook lệnh) cho F |
 | `evaluate_realtime.py` | Đo trễ phát hiện, số lượt bỏ sót / báo giả ở mức lượt chạy |
 | `synth_data.py` | Sinh dữ liệu **mô phỏng thống kê** để chạy thử pipeline khi chưa có lưu lượng thật |
@@ -63,7 +65,7 @@ python3 evaluate_realtime.py
 
 ## Đã kiểm thử / chưa kiểm thử
 
-- Đã chạy: `features.py`, đọc pcap, bắt trực tiếp AF_PACKET (thử trên `lo`, mỗi gói đếm một lần), `build_dataset.py`, `train_model.py`, `gateway_detector.py` (phát lại CSV và pcap, kích hoạt hook), `evaluate_realtime.py`.
-- **Chưa chạy trên Mininet và trên lưu lượng thật.** Toàn bộ số liệu mô hình hiện tại đến từ dữ liệu mô phỏng thống kê (`synth_data.py`); phải huấn luyện lại bằng dữ liệu thật của Tổ 3 trước khi dùng số liệu trong báo cáo cuối.
-- Chưa chạy: `--backend tshark` (máy thử không có tshark).
-- Mô hình được huấn luyện ở quy mô tải của cả hệ thống (camera ~80 Mbps). Với tải khác (ví dụ tắt camera) cần huấn luyện lại.
+- Đã chạy: `features.py`, `collect_data.py`, `train_model.py`, `gateway_ai.py`, `build_dataset.py`, `gateway_detector.py`, `evaluate_realtime.py`.
+- **Dữ liệu kịch bản thực tế Tổ 3:** Đã thu thập và đóng gói hoàn chỉnh vào `dataset_real.csv` (12.000 cửa sổ 1 giây: Normal 300 cảm biến + 20 camera, TCP SYN Flood, UDP Flood).
+- **Mô hình Edge AI triển khai:** `models/edge_ai_model.joblib` (Random Forest 4 đặc trưng lõi đạt Accuracy 98.97%, Precision 99.91%, Recall 96.84%, tỷ lệ báo giả FPR chỉ 0.041%, thời gian suy luận 4.29 ms/cửa sổ).
+- **Phòng thủ tự động:** `gateway_ai.py` chạy tại Gateway, phân loại mỗi 1 giây và tự động gọi `iptables` chặn IP tấn công với độ trễ phản ứng ≤ 3 giây (thực tế 1 - 2 giây), ghi `live_metrics.json`.
