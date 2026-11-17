@@ -25,11 +25,10 @@ The network must already be running with hosts `hs01..hs10`, `cam01..cam20`,
 `srv`, `gw`, and `atk`:
 
 ```text
-mininet> py import sys; sys.path.insert(0, '..')
-mininet> py from traffic.run_scenario import run_scenario
-mininet> py run_scenario(net, scenario='normal', duration=60)
-mininet> py run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=500, attack_duration=15)
-mininet> py run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=500, attack_duration=15)
+mininet> py __import__('sys').path.insert(0, '..')
+mininet> py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='normal', duration=60)
+mininet> py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=500, attack_duration=15)
+mininet> py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=500, attack_duration=15)
 ```
 
 For a direct single-floor test inside `hs01`:

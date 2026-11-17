@@ -3,10 +3,10 @@
 """Orchestrate traffic from the live Mininet CLI.
 
 Usage at `mininet>` prompt (network must already be running):
-  py from traffic.run_scenario import run_scenario
-  py run_scenario(net, scenario='normal', duration=60)
-  py run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=1000)
-  py run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=1000)
+  py __import__('sys').path.insert(0, '..')
+  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='normal', duration=60)
+  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_no_qos', duration=60, attack_type='syn_flood', attack_rate=1000)
+  py __import__('traffic.run_scenario', fromlist=['run_scenario']).run_scenario(net, scenario='attack_qos', duration=60, attack_type='udp_flood', attack_rate=1000)
 """
 from __future__ import annotations
 import csv

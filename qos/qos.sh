@@ -26,7 +26,7 @@ start_qos() {
 
   # Remove the previous root qdisc on the VLAN egress sub-interface, if any.
   tc qdisc del dev "$IFACE" root 2>/dev/null || true
-  tc qdisc add dev "$IFACE" root handle 1: htb default 13
+  tc qdisc add dev "$IFACE" root handle 1: htb default 13 r2q 100
   tc class add dev "$IFACE" parent 1: classid 1:1 htb rate "$ROOT_RATE" ceil "$ROOT_RATE"
 
   # Guaranteed rates total 76 Mbit/s, below the 100 Mbit/s root capacity.
