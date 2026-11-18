@@ -4,7 +4,8 @@
 Tách riêng để kiểm thử được mà không cần chạy Streamlit, và để scenario_daemon.py
 (chạy trong tiến trình Mininet) dùng chung định dạng file lệnh/trạng thái.
 
-Hợp đồng dữ liệu với Việt Anh (gateway_ai.py) - file live_metrics.json, ghi nguyên tử mỗi 1 giây:
+Hợp đồng dữ liệu với gateway_ai.py - file live_metrics.json, ghi nguyên tử mỗi 1 giây.
+Chấp nhận cả schema dashboard cũ và schema native của Edge AI:
   {"timestamp": 1.78e9,            # epoch giây (hoặc chuỗi ISO-8601)
    "normal_packets": 1200,         # số gói/giây được xếp là bình thường
    "syn_packets": 15,              # số gói SYN (không ACK)/giây
@@ -117,8 +118,20 @@ def load_json(path: str):
 
 def normalize(raw: dict) -> dict:
     """Chuẩn hoá một bản ghi live_metrics.json thành cấu trúc cố định."""
+    features = raw.get("features") if isinstance(raw.get("features"), dict) else {}
+    firewall = raw.get("firewall") if isinstance(raw.get("firewall"), dict) else {}
+    packet_rate = raw.get("packet_rate", features.get("packet_rate"))
+    if "udp_packets" in raw:
+        udp = _num(raw.get("udp_packets"))
+    elif "udp_ratio" in features:
+        udp = _num(features.get("udp_ratio")) * _num(packet_rate)
+    else:
+        udp = _num(raw.get("udp_packets"))
+    blocked_raw = raw.get("blocked_ips")
+    if blocked_raw is None:
+        blocked_raw = firewall.get("blocked_ips")
     blocked = []
-    for item in raw.get("blocked_ips") or []:
+    for item in blocked_raw or []:
         if isinstance(item, dict):
             ip = str(item.get("ip", "")).strip()
             if ip:
@@ -129,15 +142,25 @@ def normalize(raw: dict) -> dict:
     rtt = _num(rtt, None) if rtt is not None else None
     if rtt is not None and rtt < 0:
         rtt = None
+    prob = raw.get("prob_attack", raw.get("prob"))
+    firewall_errors = firewall.get("errors")
     return {
-        "ts": to_epoch(raw.get("timestamp")),
-        "normal": _num(raw.get("normal_packets")),
-        "syn": _num(raw.get("syn_packets")),
-        "udp": _num(raw.get("udp_packets")),
+        "ts": to_epoch(raw.get("timestamp", raw.get("timestamp_epoch"))),
+        "normal": _num(raw.get("normal_packets")) if "normal_packets" in raw else None,
+        "packet_rate": _num(packet_rate, None) if packet_rate is not None else None,
+        "syn": _num(raw.get("syn_packets", features.get("syn_count"))),
+        "udp": udp,
         "rtt_ms": rtt,
-        "status_raw": str(raw.get("status", "")),
-        "status": classify_status(raw.get("status")),
+        "status_raw": str(raw.get("status", raw.get("label", ""))),
+        "status": classify_status(raw.get("status", raw.get("label"))),
         "blocked": blocked,
+        "prob_attack": _num(prob, None) if prob is not None else None,
+        "firewall": {
+            "backend": str(firewall.get("backend", "")),
+            "rate_limit_active": bool(firewall.get("rate_limit_active", False)),
+            "active_rules": _num(firewall.get("active_rules")),
+            "errors": firewall_errors if isinstance(firewall_errors, list) else [],
+        },
         "simulated": str(raw.get("source", "")).lower() in ("simulator", "demo", "synthetic"),
     }
 
@@ -237,8 +260,8 @@ def update_history(hist: list, state: dict, maxlen: int = 180) -> bool:
     """Thêm bản ghi mới (bỏ qua nếu timestamp trùng). Trả về True nếu có thêm."""
     if hist and abs(hist[-1]["ts"] - state["ts"]) < 1e-6:
         return False
-    hist.append({"ts": state["ts"], "normal": state["normal"], "syn": state["syn"],
-                 "udp": state["udp"], "rtt_ms": state["rtt_ms"]})
+    hist.append({"ts": state["ts"], "normal": state["normal"], "packet_rate": state["packet_rate"],
+                 "syn": state["syn"], "udp": state["udp"], "rtt_ms": state["rtt_ms"]})
     del hist[:-maxlen]
     return True
 

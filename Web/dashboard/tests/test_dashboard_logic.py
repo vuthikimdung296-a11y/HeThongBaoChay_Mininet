@@ -42,6 +42,26 @@ def test_normalize_robust():
     assert s["rtt_ms"] is None and s["normal"] == 0 and [b["ip"] for b in s["blocked"]] == ["9.9.9.9", "8.8.8.8"]
     assert dl.normalize({"timestamp": 1.78e12})["ts"] == 1.78e9
 
+def test_normalize_edge_ai_output():
+    s = dl.normalize({
+        "timestamp_epoch": 1_800_000_000,
+        "label": "tan_cong",
+        "prob": 0.91,
+        "features": {"packet_rate": 2500, "syn_count": 700, "udp_ratio": 0.2},
+        "firewall": {
+            "backend": "nftables",
+            "rate_limit_active": True,
+            "blocked_ips": ["192.168.100.100"],
+            "active_rules": 3,
+            "errors": [],
+        },
+    })
+    assert s["ts"] == 1_800_000_000 and s["status"] == "attack"
+    assert s["packet_rate"] == 2500 and s["syn"] == 700 and s["udp"] == 500
+    assert s["prob_attack"] == 0.91 and s["rtt_ms"] is None
+    assert s["blocked"] == [{"ip": "192.168.100.100", "time": None, "reason": ""}]
+    assert s["firewall"]["rate_limit_active"] and s["firewall"]["active_rules"] == 3
+
 def test_history_dedupe_and_cap():
     h = []; s = rec()
     assert dl.update_history(h, s) and not dl.update_history(h, s)

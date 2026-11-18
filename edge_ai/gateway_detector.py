@@ -245,7 +245,19 @@ class Detector:
 
     def _emit(self, row, prob, raw, w_start):
         now_utc = datetime.datetime.fromtimestamp(w_start, tz=datetime.timezone.utc).isoformat()
+        packet_rate = float(row.get('packet_rate', 0))
+        udp_packets = float(row.get('udp_ratio', 0)) * packet_rate
         rec = {
+            # Dashboard live_metrics.json contract; keep the detector's original fields below.
+            'timestamp': round(w_start, 4),
+            'source': 'edge_ai',
+            'status': LABELS[self.state],
+            'packet_rate': packet_rate,
+            'syn_packets': int(row.get('syn_count', 0)),
+            'udp_packets': round(udp_packets, 4),
+            'blocked_ips': list(self.fw.blocked_ips),
+            'rtt_ms': None,
+            'prob_attack': round(prob, 4),
             'timestamp_epoch': round(w_start, 4),
             'timestamp_utc': now_utc,
             'label': LABELS[self.state],

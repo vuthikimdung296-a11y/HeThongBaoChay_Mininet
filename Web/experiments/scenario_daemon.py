@@ -7,7 +7,7 @@ traffic.run_scenario.run_scenario(net, ...) và ghi trạng thái ra /tmp/scenar
 
 Dùng tại dấu nhắc mininet> (khởi động mạng từ thư mục Network/):
   mininet> py import sys; sys.path.insert(0, '..')
-  mininet> py from experiments.scenario_daemon import serve
+  mininet> py from Web.experiments.scenario_daemon import serve
   mininet> py serve(net)                      # chiếm dòng lệnh, in log kịch bản; Ctrl+C để thoát
 
 Tham số monitor_cmd (tùy chọn): lệnh chạy Edge AI ở chế độ chỉ ghi live_metrics.json, không chặn, dùng cho
@@ -27,8 +27,8 @@ import time
 import traceback
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-for p in (ROOT, ROOT / "dashboard"):
+ROOT = Path(__file__).resolve().parents[2]
+for p in (ROOT, ROOT / "Web" / "dashboard"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
@@ -84,7 +84,9 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=None, monitor_cmd=None):
                       attack_rate=int(cmd.get("attack_rate", 1000)),
                       attack_duration=int(cmd.get("attack_duration", 20)))
         row = run_scenario(net, **kw)
-        return note + (f"RTT TB {row.get('rtt_avg_ms')} ms, P95 {row.get('rtt_p95_ms')} ms, "
+        qos_note = ("QoS đã bật và kiểm tra thành công. " if row.get("qos_enabled")
+                    else "QoS không bật trong kịch bản này. ")
+        return note + qos_note + (f"RTT TB {row.get('rtt_avg_ms')} ms, P95 {row.get('rtt_p95_ms')} ms, "
                        f"P99 {row.get('rtt_p99_ms')} ms, mất gói {row.get('ping_packet_loss_percent')}%")
     finally:
         stop_ai(net, ai, reset_cmd)
