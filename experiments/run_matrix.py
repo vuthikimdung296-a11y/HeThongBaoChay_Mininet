@@ -59,6 +59,8 @@ MANIFEST_FIELDS = [
     "run_id", "scenario", "attack_type", "attack_rate_pps", "repeat",
     "status", "error", "started_utc", "ended_utc",
     "rtt_avg_ms", "rtt_p95_ms", "rtt_p99_ms", "ping_packet_loss_percent",
+    "win_rtt_avg_ms", "win_rtt_p95_ms", "win_rtt_p99_ms", "win_loss_percent",
+    "alarm_ok", "failed_processes",
 ]
 
 
@@ -166,6 +168,8 @@ def run_matrix(net, repeats: int = 3, duration: int = 90, attack_duration: int =
                     "rtt_avg_ms": result.get("rtt_avg_ms"), "rtt_p95_ms": result.get("rtt_p95_ms"),
                     "rtt_p99_ms": result.get("rtt_p99_ms"),
                     "ping_packet_loss_percent": result.get("ping_packet_loss_percent"),
+                    **{k: result.get(k) for k in ("win_rtt_avg_ms", "win_rtt_p95_ms", "win_rtt_p99_ms",
+                                                  "win_loss_percent", "alarm_ok", "failed_processes")},
                 }
                 counters["ok"] += 1
             except ValueError as exc:
