@@ -217,7 +217,7 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-                if strict:
+                if strict or label.startswith("attack generator"):   # loi tan cong = luot do vo gia tri
                     raise RuntimeError(f"{label} timed out; inspect its traffic log") from exc
                 failed.append(label.split(" (")[0] + " timeout")
                 continue
@@ -227,7 +227,7 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                     lines = Path(m.group(1)).read_text(encoding="utf-8", errors="replace").splitlines()
                     print(f"--- 15 dong cuoi cua log {m.group(1)} ---")
                     print("\n".join(lines[-15:]))
-                if strict:
+                if strict or label.startswith("attack generator"):   # loi tan cong = luot do vo gia tri
                     raise RuntimeError(f"{label} exited with status {returncode}; inspect its traffic log")
                 failed.append(label.split(" (")[0] + f" rc={returncode}")
         ping_out, _ = ping.communicate(timeout=duration + 10)
