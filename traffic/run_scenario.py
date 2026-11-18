@@ -60,6 +60,30 @@ def _ping_metrics(output: str):
     }
 
 
+def _ping_samples(output: str):
+    """Tra ve [(epoch_giay, rtt_ms)] tu ping -D (moi dong tra loi bat dau bang [epoch])."""
+    return [(float(t), float(r)) for t, r in
+            re.findall(r"\[(\d+(?:\.\d+)?)\].*?time[=<]([0-9]+(?:\.[0-9]+)?)\s*ms", output)]
+
+
+def _window_metrics(samples, w0: float, w1: float, interval: float = 0.2):
+    """RTT/mat goi CHI trong cua so [w0, w1] (giay epoch). Mat goi = 1 - so tra loi / so goi du kien."""
+    vals = sorted(r for t, r in samples if w0 <= t <= w1)
+    expected = max(1, round((w1 - w0) / interval))
+    def pct(p):
+        if not vals:
+            return None
+        i = max(0, min(len(vals) - 1, int((p / 100) * (len(vals) - 1) + 0.999999)))
+        return round(vals[i], 4)
+    return {
+        "win_samples": len(vals),
+        "win_rtt_avg_ms": round(sum(vals) / len(vals), 4) if vals else None,
+        "win_rtt_p95_ms": pct(95),
+        "win_rtt_p99_ms": pct(99),
+        "win_loss_percent": round(max(0.0, 100.0 * (1 - len(vals) / expected)), 2),
+    }
+
+
 def _append_csv(path: Path, row: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     exists = path.exists()
@@ -72,11 +96,17 @@ def _append_csv(path: Path, row: dict):
 
 def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                  attack_rate=1000, attack_duration=20, spoof=False,
-                 camera_bandwidth="4M", telemetry_interval=30):
+                 camera_bandwidth="4M", telemetry_interval=30,
+                 probe_dscp=48, strict=False):
     """Run one repeatable experiment using Mininet host objects from the CLI.
 
     Scenarios: normal, attack_no_qos, attack_qos. QoS is applied only in
     attack_qos. The MQTT broker and iperf3 server run inside `srv` namespace.
+
+    probe_dscp: DSCP cua goi ping do RTT (48 = giong ban tin canh bao -> lop 1:10; None = DSCP 0).
+    strict: True = dung ngay khi bat ky tien trinh con nao thoat loi (hanh vi cu);
+            False = ghi lai tien trinh loi vao CSV (cot failed_processes, alarm_ok) va chay tiep.
+    Cac cot win_* la RTT/mat goi TRONG CUA SO TAN CONG (hoac cua so 10 s cung vi tri o kich ban normal).
     """
     if scenario not in {"normal", "attack_no_qos", "attack_qos"}:
         raise ValueError("scenario must be normal, attack_no_qos or attack_qos")
@@ -101,6 +131,7 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         gw.cmd(f"bash {QOS_SCRIPT} stop")
 
     processes = []
+    failed = []
     log_handles = []
     iperf_servers = []
     broker = None
@@ -150,12 +181,18 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                               host.popen(cmd, stdout=log, stderr=subprocess.STDOUT)))
 
         # RTT probe from a sensor VLAN host to the server, sampled every 200 ms.
-        ping = net.get("hs01").popen(["ping", "-D", "-i", "0.2", "-w", str(duration), "10.0.30.10"],
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        ping_cmd = ["ping", "-D", "-i", "0.2", "-w", str(duration)]
+        if probe_dscp is not None:
+            ping_cmd += ["-Q", hex((int(probe_dscp) & 0x3F) << 2)]   # DSCP 48 -> TOS 0xc0
+        ping_cmd.append("10.0.30.10")
+        probe_t0 = time.time()
+        ping = net.get("hs01").popen(ping_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        attack_start_delay = min(10, max(2, duration // 5))
+        win_start, win_len = probe_t0 + attack_start_delay, float(attack_duration if scenario != "normal" else 10)
 
         if scenario != "normal":
-            attack_start_delay = min(10, max(2, duration // 5))
             time.sleep(attack_start_delay)
+            win_start = time.time()          # moc that su luc bat dau tan cong
             atk = net.get("atk")
             attack_cmd = [sys.executable, str(TRAFFIC / "attack.py"), "--type", attack_type,
                           "--rate", str(int(attack_rate)), "--duration", str(int(attack_duration)),
@@ -180,21 +217,30 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-                raise RuntimeError(f"{label} timed out; inspect its traffic log") from exc
+                if strict:
+                    raise RuntimeError(f"{label} timed out; inspect its traffic log") from exc
+                failed.append(label.split(" (")[0] + " timeout")
+                continue
             if returncode != 0:
                 m = re.search(r"\((.*)\)$", label)
                 if m and Path(m.group(1)).is_file():
                     lines = Path(m.group(1)).read_text(encoding="utf-8", errors="replace").splitlines()
                     print(f"--- 15 dong cuoi cua log {m.group(1)} ---")
                     print("\n".join(lines[-15:]))
-                raise RuntimeError(f"{label} exited with status {returncode}; inspect its traffic log")
+                if strict:
+                    raise RuntimeError(f"{label} exited with status {returncode}; inspect its traffic log")
+                failed.append(label.split(" (")[0] + f" rc={returncode}")
         ping_out, _ = ping.communicate(timeout=duration + 10)
         ping_metrics = _ping_metrics(ping_out)
+        win = _window_metrics(_ping_samples(ping_out), win_start, win_start + win_len)
         row = {"timestamp_utc": started_iso, "scenario": scenario, "duration_s": duration,
                "qos_enabled": qos_enabled, "attack_type": attack_type if scenario != "normal" else "none",
                "attack_rate_pps": attack_rate if scenario != "normal" else 0,
                "attack_duration_s": attack_duration if scenario != "normal" else 0,
-               **ping_metrics}
+               **ping_metrics, **win,
+               "probe_dscp": probe_dscp if probe_dscp is not None else 0,
+               "alarm_ok": not any(f.startswith("MQTT hs01") for f in failed),
+               "failed_processes": ";".join(failed)}
         _append_csv(RESULTS / "scenario_metrics.csv", row)
         (RESULTS / f"ping_{scenario}.txt").write_text(ping_out, encoding="utf-8")
         print("Scenario complete:", row)
