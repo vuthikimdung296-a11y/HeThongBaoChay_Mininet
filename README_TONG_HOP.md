@@ -288,10 +288,10 @@ Các lượt đo thường ghi vào `traffic/results/`:
 | `attack_events.csv` | Mốc thời gian sự kiện; dùng đối chiếu dữ liệu và tạo nhãn |
 | `mqtt_*.log`, `cam*.log`, `ping_*.txt` | Log tiến trình của lượt đo |
 
-Dashboard cũng đọc 4 CSV trong ZIP kết quả VM: `scenario_metrics.csv`,
-`camera_metrics.csv`, `attack_events.csv` và `run_matrix_manifest.csv`. Bảng giữ
-cả các dòng lỗi; cần kiểm tra cột `error` trong manifest thay vì chỉ dựa trên số
-lượt thành công.
+Dashboard đọc 4 CSV trong ZIP kết quả VM: `scenario_metrics.csv`,
+`camera_metrics.csv`, `attack_events.csv` và `run_matrix_manifest.csv`. Manifest
+là danh sách các lượt trong ma trận kiểm thử; các CSV còn lại chứa số đo chi tiết
+và nhật ký sự kiện.
 
 ## 9. Kiểm thử và bằng chứng hiện có
 
@@ -303,20 +303,22 @@ python Web/dashboard/tests/test_dashboard_logic.py
 python Web/experiments/tests/test_benchmark_analyze.py
 ```
 
-Theo kết quả được kiểm tra khi lập tài liệu:
+Theo ZIP kết quả hiện tại:
 
 - Biên bản topology ghi 9 mục đạt, 1 mục không áp dụng, không ghi mục thất bại.
-- ZIP kiểm thử có 16 dòng `scenario_metrics`, 554 mẫu camera, 36 sự kiện và 22 lượt
-  trong manifest; trong đó 13 lượt `ok`, 9 lượt `error`. Xem lỗi từng lượt trong
-  `run_matrix_manifest.csv` bên trong [ZIP kết quả](ket_qua_kiem_thu.zip).
+- Ma trận kiểm thử có 13 lượt; cả 13 lượt đều có `status=ok` và manifest không có
+  dòng `error`. ZIP còn có 16 dòng `scenario_metrics`, 554 mẫu camera và 36 sự kiện.
+  Các số liệu này là những phần dữ liệu khác nhau, không phải 16 hay 36 lượt kiểm
+  thử ma trận. Xem nội dung trong [ZIP kết quả](ket_qua_kiem_thu.zip).
 - Dashboard logic đạt 12/12 test; benchmark analysis đạt 4/4 test trên môi trường
   Python đã kiểm tra.
 - Video dashboard đã chia sẻ có banner **DỮ LIỆU MÔ PHỎNG** và daemon chưa chạy.
   Video xác nhận giao diện hoạt động với simulator, không phải bằng chứng detector
   Edge AI live đã hoạt động trên VM.
 
-Không diễn giải 13 lượt thành công là toàn bộ ma trận đạt; cần xem và xử lý 9 dòng
-lỗi trước khi chốt báo cáo.
+`status=ok` cho biết lượt chạy hoàn tất theo manifest; không tự khẳng định mọi chỉ
+số RTT, mất gói hay KPI đều đạt ngưỡng. Khi viết kết luận, cần đối chiếu các số đo
+trong CSV với KPI của đề tài.
 
 ## 10. Giới hạn và xử lý sự cố
 
