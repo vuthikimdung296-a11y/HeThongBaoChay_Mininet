@@ -1,0 +1,22 @@
+{
+  "timestamp": 1794947170.7639103,
+  "datetime": "2026-11-18 03:26:10",
+  "status": "NORMAL",
+  "raw_prediction": 0,
+  "attack_probability": 0.0112,
+  "attack_type": "None",
+  "reaction_time_sec": 0.0,
+  "reaction_speed_check": "<= 3s (DAT YEU CAU)",
+  "features": {
+    "packet_rate": 8570.0,
+    "byte_rate": 9950000.0,
+    "syn_count": 2,
+    "ip_dispersion": 88
+  },
+  "firewall": {
+    "backend": "iptables",
+    "blocked_ips": [],
+    "active_rules_count": 0,
+    "last_action": "MONITORING"
+  }
+}
