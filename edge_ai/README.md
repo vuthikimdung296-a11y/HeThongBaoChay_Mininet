@@ -64,59 +64,74 @@ Theo đề cương nghiên cứu, Gateway chỉ kiểm tra thông tin tiêu đ�
 
 ## 4. Hướng dẫn vận hành trong Mininet
 
+> **Quy ước đường dẫn.** Các node Mininet (`gw`, `srv`, `hs01`, `atk`...) chạy lệnh trong thư mục hiện tại của tiến trình `mn` (ở đây là `Network/`), nên các đường dẫn tương đối như `edge_ai/...` hay `qos/...` sẽ **không tìm thấy file**. Hãy dùng đường dẫn tuyệt đối. Trong tài liệu này `<REPO>` là thư mục gốc của repo, ví dụ `/home/nhung/mininet_lab/HeThongBaoChay_Mininet`; thay bằng đường dẫn trên máy của bạn.
+
 ### Bước 1: Khởi động mạng ảo Mininet
 ```bash
-cd Network
+cd <REPO>/Network
 sudo mn -c
 sudo python3 topology.py
 ```
 
-### Bước 2: Bật dịch vụ Mosquitto trên Server
+### Bước 2: Broker MQTT trên Server
+- Nếu dùng `traffic/run_scenario.py` thì **bỏ qua bước này**, script tự bật broker (và tự dọn broker cũ).
+- Nếu chạy tay, dùng file cấu hình, không chạy `srv mosquitto -d` trần:
 ```bash
-mininet> srv mosquitto -d
+mininet> srv pkill -x mosquitto
+mininet> srv mosquitto -c <REPO>/traffic/mosquitto.conf -d
 ```
+Lý do: Mosquitto 2.x mặc định chỉ nhận kết nối từ chính máy nó và từ chối kết nối ẩn danh, nên các host cảm biến sẽ bị từ chối. Chạy thêm một broker khi `run_scenario` đang bật sẽ báo trùng cổng 1883.
 
 ### Bước 3: Áp dụng cấu hình QoS tại Gateway
 ```bash
-mininet> gw bash qos/qos.sh start
+mininet> gw bash <REPO>/qos/qos.sh start
 ```
 
 ### Bước 4: Khởi chạy Module Edge AI phòng thủ tự động tại Gateway
 ```bash
-mininet> gw python3 edge_ai/gateway_detector.py --iface gw-eth0 gw-eth1 --firewall nftables --state-file /tmp/live_metrics.json &
+mininet> gw python3 <REPO>/edge_ai/gateway_detector.py --iface gw-eth0 gw-eth1 --firewall nftables --state-file /tmp/live_metrics.json &
 ```
 
 ### Bước 5: Bật luồng lưu lượng nền và thử nghiệm tấn công
 ```bash
-# Bật luồng MQTT cảm biến:
-mininet> hs01 python3 traffic/normal_mqtt.py &
+# Luồng MQTT cảm biến của tầng 1 (tham số --floor là bắt buộc):
+mininet> hs01 python3 <REPO>/traffic/normal_mqtt.py --floor 1 --duration 120 &
 
-# Bật đợt tấn công từ host ngoại vi atk:
-mininet> atk hping3 -S -p 1883 -i u200 10.0.30.10
+# Đợt tấn công từ host ngoại vi atk, dùng attack.py (không dùng hping3 trực tiếp):
+mininet> atk python3 <REPO>/traffic/attack.py --type syn_flood --rate 1000 --duration 60 --target 10.0.30.10 --episode kichban3_syn_1000_lan1
 ```
+`attack.py` ghi thời điểm bắt đầu và kết thúc vào `traffic/results/attack_events.csv`. Nhật ký này cần để gán nhãn dữ liệu (mục 5), nên không dùng `hping3` chạy trần.
 
 ---
 
 ## 5. Quy trình thu thập dữ liệu Mininet thực tế & Huấn luyện lại
 
-Để nộp số liệu đo thực nghiệm chính thức:
+Mỗi lượt chạy cần **một tên duy nhất**, ví dụ `kichban3_syn_1000_lan1`, dùng thống nhất ở tên file đặc trưng, `attack.py --episode` và `build_dataset.py --episode`. Tên lượt dùng để chia train/test theo lượt, nên hai lượt không được trùng tên.
 
-1. **Thu thập đặc trưng trong Mininet:**
+1. **Thu thập đặc trưng trong Mininet** (bật trước khi tấn công, đặt thời gian dài hơn lượt khoảng 10 giây):
    ```bash
-   mininet> gw python3 edge_ai/collect_metadata.py --iface gw-eth0 gw-eth1 --duration 180 --out edge_ai/data/features_kichban3_lan1.csv &
+   mininet> gw python3 <REPO>/edge_ai/collect_metadata.py --iface gw-eth0 gw-eth1 --duration 90 --out <REPO>/edge_ai/data/features_kichban3_syn_1000_lan1.csv &
    ```
-2. **Gán nhãn với nhật ký tấn công (`traffic/results/attack_events.csv`):**
+2. **Chạy lưu lượng nền và tấn công** trong Mininet như Bước 5 mục 4 (hoặc `run_scenario`), dùng đúng tên lượt ở trên.
+3. **Gán nhãn.** Mở một terminal khác ngoài Mininet, đứng ở thư mục gốc repo:
    ```bash
+   cd <REPO>
    python3 edge_ai/build_dataset.py \
-     --features edge_ai/data/features_kichban3_lan1.csv \
+     --features edge_ai/data/features_kichban3_syn_1000_lan1.csv \
      --log traffic/results/attack_events.csv \
-     --episode kichban3_lan1 \
-     --out edge_ai/data/dataset_mininet.csv
+     --episode kichban3_syn_1000_lan1 \
+     --out edge_ai/data/dataset_kichban3_syn_1000_lan1.csv
    ```
-3. **Huấn luyện mô hình:**
+   Đọc dòng kết quả: với lượt có tấn công, số cửa sổ tấn công phải lớn hơn 0. Nếu thấy dòng `CANH BAO`, dừng lại và kiểm tra trước khi huấn luyện. Cột `episode` trong nhật ký không cần trùng `--episode`, vì khi file đặc trưng không có cột `episode` thì việc gán nhãn dựa trên thời gian.
+4. **Gộp các lượt thành một dataset:**
+   ```bash
+   python3 -c "import glob, pandas as pd; pd.concat([pd.read_csv(f) for f in sorted(glob.glob('edge_ai/data/dataset_kichban*.csv'))]).to_csv('edge_ai/data/dataset_mininet.csv', index=False)"
+   ```
+5. **Huấn luyện mô hình** (nên chạy trên máy ảo Gateway để phiên bản `scikit-learn` khớp):
    ```bash
    python3 edge_ai/train_model.py --data edge_ai/data/dataset_mininet.csv --outdir edge_ai/models
    ```
+   Các lượt dùng để đo kết quả nghiệm thu chính thức không được đưa vào tập huấn luyện.
 
 ---
 
