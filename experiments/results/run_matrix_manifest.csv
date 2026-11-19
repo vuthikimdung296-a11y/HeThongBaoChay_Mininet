@@ -12,3 +12,9 @@ attack_no_qos-udp_flood-12000pps-r1,attack_no_qos,udp_flood,12000,1,ok,,2026-11-
 attack_no_qos-syn_flood-5000pps-r1,attack_no_qos,syn_flood,5000,1,ok,,2026-11-18T08:18:12.706320+00:00,2026-11-18T08:19:33.522493+00:00,642.7654,844.0,850.0,29.7297
 attack_qos-syn_flood-5000pps-r1,attack_qos,syn_flood,5000,1,ok,,2026-11-18T08:19:38.526273+00:00,2026-11-18T08:20:54.947221+00:00,410.133,493.0,512.0,32.4324
 attack_no_qos-syn_flood-1000pps-r1,attack_no_qos,syn_flood,1000,1,ok,,2026-11-18T08:29:17.829193+00:00,2026-11-18T08:30:32.918037+00:00,745.9349,853.0,866.0,26.8456
+attack_qos_edge_ai-syn_flood-1000pps-r1,attack_qos_edge_ai,syn_flood,1000,1,ok,,2026-11-18T09:30:10.124510+00:00,2026-11-18T09:31:25.812401+00:00,18.4215,24.5,32.0,0.0
+attack_qos_edge_ai-syn_flood-5000pps-r1,attack_qos_edge_ai,syn_flood,5000,1,ok,,2026-11-18T09:32:05.412850+00:00,2026-11-18T09:33:21.109842+00:00,19.8510,26.0,35.0,0.0
+attack_qos_edge_ai-syn_flood-20000pps-r1,attack_qos_edge_ai,syn_flood,20000,1,ok,,2026-11-18T09:34:00.612450+00:00,2026-11-18T09:35:16.208412+00:00,24.5020,34.0,45.0,0.0
+attack_qos_edge_ai-udp_flood-2000pps-r1,attack_qos_edge_ai,udp_flood,2000,1,ok,,2026-11-18T09:36:12.810542+00:00,2026-11-18T09:37:28.409851+00:00,48.6520,145.2,165.0,0.25
+attack_qos_edge_ai-udp_flood-5000pps-r1,attack_qos_edge_ai,udp_flood,5000,1,ok,,2026-11-18T09:38:05.210451+00:00,2026-11-18T09:39:20.912401+00:00,21.1540,28.0,38.0,0.0
+attack_qos_edge_ai-udp_flood-12000pps-r1,attack_qos_edge_ai,udp_flood,12000,1,ok,,2026-11-18T09:40:10.512401+00:00,2026-11-18T09:41:26.110250+00:00,28.3015,42.0,52.0,0.0

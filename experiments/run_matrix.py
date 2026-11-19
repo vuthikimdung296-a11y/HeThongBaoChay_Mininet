@@ -64,12 +64,14 @@ MANIFEST_FIELDS = [
 ]
 
 
-def _build_combinations():
+def _build_combinations(include_edge_ai=True):
     combos = [("normal", None, 0)]
     for attack_type, rates in (("syn_flood", (1000, 5000, 20000)), ("udp_flood", (2000, 5000, 12000))):
         for rate in rates:
             combos.append(("attack_no_qos", attack_type, rate))
             combos.append(("attack_qos", attack_type, rate))
+            if include_edge_ai:
+                combos.append(("attack_qos_edge_ai", attack_type, rate))
     return combos
 
 

@@ -108,8 +108,8 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
             False = ghi lai tien trinh loi vao CSV (cot failed_processes, alarm_ok) va chay tiep.
     Cac cot win_* la RTT/mat goi TRONG CUA SO TAN CONG (hoac cua so 10 s cung vi tri o kich ban normal).
     """
-    if scenario not in {"normal", "attack_no_qos", "attack_qos"}:
-        raise ValueError("scenario must be normal, attack_no_qos or attack_qos")
+    if scenario not in {"normal", "attack_no_qos", "attack_qos", "attack_qos_edge_ai"}:
+        raise ValueError("scenario must be normal, attack_no_qos, attack_qos, or attack_qos_edge_ai")
     if duration < 15 or duration > 600:
         raise ValueError("duration must be between 15 and 600 seconds")
     if scenario == "normal":
@@ -119,7 +119,8 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     srv, gw = net.get("srv"), net.get("gw")
-    qos_enabled = scenario == "attack_qos"
+    qos_enabled = scenario in {"attack_qos", "attack_qos_edge_ai"}
+    edge_ai_enabled = scenario == "attack_qos_edge_ai"
     if qos_enabled:
         out = gw.cmd(f"bash {QOS_SCRIPT} start")
         print(out)
@@ -136,8 +137,15 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
     iperf_servers = []
     broker = None
     ping = None
+    detector = None
     started_iso = datetime.now(timezone.utc).isoformat()
     try:
+        if edge_ai_enabled:
+            detector_cmd = [sys.executable, str(ROOT / "edge_ai" / "gateway_detector.py"),
+                            "--iface", "gw-eth0", "gw-eth1", "--firewall", "nftables",
+                            "--state-file", "/tmp/live_metrics.json"]
+            detector = gw.popen(detector_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            processes.append(("Edge AI Detector", detector))
         # Use a dedicated iperf3 listener per camera so simultaneous clients do
         # not contend for a single server session.
         # Mosquitto 2.x mac dinh CHI nhan ket noi tu chinh may no (localhost) va tu choi nac danh,
@@ -263,3 +271,11 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
             handle.close()
         if ping is not None and ping.poll() is None:
             ping.terminate()
+        if detector is not None:
+            if detector.poll() is None:
+                detector.terminate()
+                try:
+                    detector.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    detector.kill()
+            gw.cmd("nft delete table inet ddos 2>/dev/null")
