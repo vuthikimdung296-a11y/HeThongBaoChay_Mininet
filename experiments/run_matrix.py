@@ -16,9 +16,9 @@ single run.
 
 Matrix (13 combinations x repeats, default repeats=3 => 39 runs):
   - normal                                              x repeats
-  - attack_no_qos, syn_flood, rate in {1000,5000,20000} x repeats
+  - attack_no_qos, syn_flood, rate in {500,1000,5000} x repeats
   - attack_no_qos, udp_flood, rate in {2000,5000,12000} x repeats
-  - attack_qos,    syn_flood, rate in {1000,5000,20000} x repeats
+  - attack_qos,    syn_flood, rate in {500,1000,5000} x repeats
   - attack_qos,    udp_flood, rate in {2000,5000,12000} x repeats
 
 NOTE: traffic/attack.py currently refuses rate > MAX_RATE_PPS (5000 at the
@@ -66,7 +66,7 @@ MANIFEST_FIELDS = [
 
 def _build_combinations(include_edge_ai=True):
     combos = [("normal", None, 0)]
-    for attack_type, rates in (("syn_flood", (1000, 5000, 20000)), ("udp_flood", (2000, 5000, 12000))):
+    for attack_type, rates in (("syn_flood", (500, 1000, 5000)), ("udp_flood", (2000, 5000, 12000))):
         for rate in rates:
             combos.append(("attack_no_qos", attack_type, rate))
             combos.append(("attack_qos", attack_type, rate))

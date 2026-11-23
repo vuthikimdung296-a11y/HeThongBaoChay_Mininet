@@ -5,7 +5,7 @@ Streamlit chạy ở tiến trình riêng nên không có đối tượng `net` 
 TRONG tiến trình Mininet, đọc file lệnh do dashboard ghi (/tmp/scenario_cmd.json), gọi
 traffic.run_scenario.run_scenario(net, ...) và ghi trạng thái ra /tmp/scenario_status.json.
 
-Dùng tại dấu nhắc mininet> (khởi động mạng từ thư mục Network/):
+Dùng tại dấu nhắc mininet> (khởi động mạng từ thư mục network/):
   mininet> py import sys; sys.path.insert(0, '..')
   mininet> py from Web.experiments.scenario_daemon import serve
   mininet> py serve(net)                      # chiếm dòng lệnh, in log kịch bản; Ctrl+C để thoát

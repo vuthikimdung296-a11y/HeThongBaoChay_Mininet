@@ -4,11 +4,11 @@
 Hai chế độ:
   1) CHẠY (tại mininet>, mạng đã dựng):
         mininet> py import sys; sys.path.insert(0, '..')
-        mininet> py from experiments.benchmark import run_all
+        mininet> py from Web.experiments.benchmark import run_all
         mininet> py run_all(net, repeats=3, duration=60, attack_type='syn_flood', attack_rate=1000, attack_duration=20)
      Mỗi lượt lưu vào experiments/results/benchmark_<thời gian>_<kiểu tấn công>/<kịch bản>_rNN/ rồi tự phân tích.
   2) PHÂN TÍCH (máy nào cũng chạy được, chỉ cần thư mục kết quả):
-        python3 experiments/benchmark.py analyze experiments/results/benchmark_xxx
+        python3 Web/experiments/benchmark.py analyze experiments/results/benchmark_xxx
 
 Các phép đo (mỗi lượt):
   - RTT báo cháy   : ping -Q 192 (DSCP 48 = lớp báo cháy, mark 0x10) từ hs02 -> srv, 5 gói/giây. Đây là mẫu
@@ -34,8 +34,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT, ROOT / "dashboard"):
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (ROOT, ROOT / "Web" / "dashboard", ROOT / "Web" / "experiments"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -174,7 +174,7 @@ def analyze_run(run_dir: Path) -> dict:
         react = None
         for line in samples_f.read_text(encoding="utf-8").splitlines():
             s = json.loads(line)
-            if s["t"] >= a0 and (s.get("blocked") or s.get("status_key") == "mitigated"):
+            if s["t"] >= a0 and (s.get("blocked") or s.get("rate_limit") or s.get("status_key") == "mitigated"):
                 react = s["t"] - a0
                 break
         res["react_s"] = react
@@ -323,7 +323,8 @@ class MetricsSampler(threading.Thread):
                 if raw:
                     st = dl.normalize(raw)
                     f.write(json.dumps({"t": time.time(), "ts": st["ts"], "status_key": st["status"],
-                                        "rtt_ms": st["rtt_ms"], "blocked": [b["ip"] for b in st["blocked"]]}) + "\n")
+                                        "rtt_ms": st["rtt_ms"], "blocked": [b["ip"] for b in st["blocked"]],
+                                        "rate_limit": bool((st.get("firewall") or {}).get("rate_limit_active"))}) + "\n")
                     f.flush()
                 self._halt.wait(0.5)
 
@@ -345,9 +346,9 @@ def _copy_new_rows(src: Path, dst: Path, skip: int):
 
 
 def run_one(net, sc, run_dir: Path, *, repeat, duration, attack_type, attack_rate, attack_duration,
-            ai_cmd, reset_cmd, live_path):
+            ai_cmd, reset_cmd, live_path, camera_bandwidth="4M"):
     from traffic.run_scenario import run_scenario
-    from experiments.scenario_daemon import start_ai, stop_ai
+    from scenario_daemon import start_ai, stop_ai
     run_dir.mkdir(parents=True, exist_ok=True)
     cam0, ev0 = _count(T3_RESULTS / "camera_metrics.csv"), _count(T3_RESULTS / "attack_events.csv")
     sampler = MetricsSampler(live_path, run_dir / "live_samples.jsonl")
@@ -365,9 +366,9 @@ def run_one(net, sc, run_dir: Path, *, repeat, duration, attack_type, attack_rat
             ai = start_ai(net, ai_cmd, run_dir / "gateway_ai.log")
             if ai is None:
                 print("[benchmark] CẢNH BÁO: không tìm thấy gateway_ai.py, kịch bản 3 chỉ có QoS!")
-        kw = {}
+        kw = {"camera_bandwidth": camera_bandwidth}
         if sc["run"] != "normal":
-            kw = dict(attack_type=attack_type, attack_rate=attack_rate, attack_duration=attack_duration)
+            kw.update(attack_type=attack_type, attack_rate=attack_rate, attack_duration=attack_duration)
         run_scenario(net, scenario=sc["run"], duration=duration, **kw)
     finally:
         stop_ai(net, ai, reset_cmd)
@@ -390,11 +391,11 @@ def run_one(net, sc, run_dir: Path, *, repeat, duration, attack_type, attack_rat
 
 
 def run_all(net, repeats=3, duration=60, attack_type="syn_flood", attack_rate=1000, attack_duration=20,
-            ai_cmd=None, reset_cmd=None, include_qos_only=False, out_dir=None, live_path=None):
+            ai_cmd=None, reset_cmd=None, include_qos_only=False, out_dir=None, live_path=None, camera_bandwidth="4M"):
     """Chạy lần lượt (bình thường, chưa AI+QoS, có AI+QoS) x repeats rồi phân tích.
     reset_cmd: lệnh chạy trong Gateway để gỡ luật chặn của Việt Anh giữa các lượt (ví dụ 'nft flush table inet ddos')."""
     import dashboard_logic as dl
-    from experiments.scenario_daemon import DEFAULT_AI
+    from scenario_daemon import DEFAULT_AI
     ai_cmd, live_path = ai_cmd or DEFAULT_AI, live_path or dl.LIVE_PATH
     batch = Path(out_dir) if out_dir else RESULTS / f"benchmark_{time.strftime('%Y%m%d_%H%M%S')}_{attack_type}"
     batch.mkdir(parents=True, exist_ok=True)
@@ -404,7 +405,7 @@ def run_all(net, repeats=3, duration=60, attack_type="syn_flood", attack_rate=10
             print(f"\n===== Lượt {rep}/{repeats} - {sc['label']} =====", flush=True)
             run_one(net, sc, batch / f"{sc['key']}_r{rep:02d}", repeat=rep, duration=duration,
                     attack_type=attack_type, attack_rate=attack_rate, attack_duration=attack_duration,
-                    ai_cmd=ai_cmd, reset_cmd=reset_cmd, live_path=live_path)
+                    ai_cmd=ai_cmd, reset_cmd=reset_cmd, live_path=live_path, camera_bandwidth=camera_bandwidth)
             time.sleep(5)                      # cho hàng đợi và socket ổn định giữa các lượt
     return analyze(batch)
 

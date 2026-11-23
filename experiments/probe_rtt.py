@@ -123,8 +123,17 @@ class Prober:
             self._ack_time = time.monotonic()
             self._ack_event.set()
 
-    def connect(self, timeout: float = 8.0) -> None:
-        self.client.connect(self.broker, self.port, keepalive=30, bind_address=self.bind_ip)
+    def connect(self, timeout: float = 8.0, retry_for: float = 40.0) -> None:
+        # run_matrix.py khoi dong probe TRUOC khi run_scenario bat Mosquitto, nen phai thu lai cho den khi broker len.
+        deadline = time.monotonic() + retry_for
+        while True:
+            try:
+                self.client.connect(self.broker, self.port, keepalive=30, bind_address=self.bind_ip)
+                break
+            except OSError as exc:  # ConnectionRefusedError, timed out, network unreachable...
+                if time.monotonic() > deadline:
+                    raise ConnectionError(f"Broker {self.broker}:{self.port} chua san sang sau {retry_for:.0f} s: {exc}") from exc
+                time.sleep(1.0)
         self.client.loop_start()
         if not self.connected.wait(timeout):
             raise TimeoutError(f"MQTT connect timeout ({self.bind_ip} -> {self.broker}:{self.port})")

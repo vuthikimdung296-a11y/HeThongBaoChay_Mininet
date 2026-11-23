@@ -139,7 +139,7 @@ def normalize(raw: dict) -> dict:
 
     # 3. RTT (đọc từ raw hoặc gán mặc định an toàn cho hệ thống)
     rtt = raw.get("rtt_ms")
-    rtt = _num(rtt, 25.0) if rtt is not None else 25.0
+    rtt = _num(rtt, None) if rtt is not None else None   # không bịa số: không có RTT thì hiện "—"
 
     return {
         "ts": to_epoch(raw.get("timestamp")),
