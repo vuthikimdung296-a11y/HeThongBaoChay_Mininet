@@ -1,0 +1,26 @@
+{
+	"start":	{
+		"connected":	[],
+		"version":	"iperf 3.20",
+		"system_info":	"Linux destop 7.0.0-43-generic #43-Ubuntu SMP PREEMPT_DYNAMIC Fri Oct 23 13:25:25 UTC 2026 x86_64",
+		"timestamp":	{
+			"time":	"Mon, 23 Nov 2026 20:40:41 GMT",
+			"timesecs":	1795466441,
+			"timemillisecs":	1795466441206
+		},
+		"connecting_to":	{
+			"host":	"10.0.30.10",
+			"port":	5217
+		},
+		"cookie":	"wtvkio43jlcheknzrtgo3kb7i2xmaqcggh5x",
+		"target_bitrate":	4000000,
+		"fq_rate":	0,
+		"sock_bufsize":	0,
+		"sndbuf_actual":	212992,
+		"rcvbuf_actual":	212992
+	},
+	"intervals":	[],
+	"end":	{
+	},
+	"error":	"unable to read from stream socket: Resource temporarily unavailable"
+}

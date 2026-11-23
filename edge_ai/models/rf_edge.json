@@ -13,5 +13,7 @@
   },
   "threshold": 0.5,
   "consecutive_windows_to_block": 2,
-  "reaction_time_guarantee_sec": 2.0
+  "reaction_time_guarantee_sec": 2.0,
+  "sklearn_version": "1.9.1",
+  "is_synthetic_pipeline_data": false
 }

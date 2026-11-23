@@ -177,7 +177,7 @@ def render_live():
     label = {"normal": "BÌNH THƯỜNG", "attack": "ĐANG BỊ TẤN CÔNG", "mitigated": "ĐÃ CHẶN",
              "unknown": "KHÔNG RÕ"}
     m[0].metric("Trạng thái", label[state["status"]] if state else "—")
-    prob = state["prob_attack"] if state else None
+    prob = state.get("prob_attack", state.get("prob")) if state else None
     m[1].metric("Xác suất tấn công (AI)", f"{prob * 100:.1f}%" if prob is not None else "—")
     rtt = state["rtt_ms"] if state else None
     m[2].metric("Tổng gói IPv4/s", f"{state['packet_rate']:.0f}"
@@ -207,7 +207,7 @@ def render_live():
         else:
             st.caption("Chưa có IP nào bị chặn.")
         st.caption("IP đang bị chặn: " + (", ".join(sorted(ss.active_blocked)) or "không có"))
-        firewall = state["firewall"] if state else None
+        firewall = state.get("firewall", {}) if state else None
         if firewall and firewall["backend"]:
             mode = "rate-limit đang bật" if firewall["rate_limit_active"] else "rate-limit tắt"
             st.caption(f"Firewall {firewall['backend']}: {mode}; {firewall['active_rules']:.0f} luật")
@@ -220,9 +220,15 @@ def render_live():
     if len(hist) >= 2:
         df = pd.DataFrame(hist)
         df.index = pd.to_datetime(df["ts"], unit="s")
+        for _c in ["packet_rate", "normal", "syn", "udp"]:
+            if _c not in df.columns:
+                df[_c] = 0.0
         pk = df[["packet_rate", "normal", "syn", "udp"]].rename(columns={
-            "packet_rate": "Tổng gói IPv4", "normal": "Gói bình thường",
-            "syn": "Gói SYN", "udp": "Gói UDP"})
+            "packet_rate": "Tổng gói IPv4",
+            "normal": "Gói bình thường",
+            "syn": "Gói SYN",
+            "udp": "Gói UDP",
+        })
         pk = pk.dropna(axis=1, how="all")
         st.subheader("Gói tin theo thời gian thực (gói/giây)")
         try:
