@@ -1,0 +1,23 @@
+{
+	"start":	{
+		"connected":	[],
+		"version":	"iperf 3.20",
+		"system_info":	"Linux destop 7.0.0-43-generic #43-Ubuntu SMP PREEMPT_DYNAMIC Fri Oct 23 13:25:25 UTC 2026 x86_64",
+		"timestamp":	{
+			"time":	"Mon, 23 Nov 2026 07:50:55 GMT",
+			"timesecs":	1795420255,
+			"timemillisecs":	1795420255136
+		},
+		"connecting_to":	{
+			"host":	"10.0.30.10",
+			"port":	5219
+		},
+		"cookie":	"ly2dluxo23zl2qjxtgioj5ydw26s2zbgqa4z",
+		"target_bitrate":	4000000,
+		"fq_rate":	0
+	},
+	"intervals":	[],
+	"end":	{
+	},
+	"error":	"unable to receive parameters from client: "
+}

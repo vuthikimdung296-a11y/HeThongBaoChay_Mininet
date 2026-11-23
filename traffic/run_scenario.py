@@ -151,9 +151,9 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         # Mosquitto 2.x mac dinh CHI nhan ket noi tu chinh may no (localhost) va tu choi nac danh,
         # nen cac host hs01..hs10 se bi tu choi. Phai chay kem file cau hinh nay.
         srv.cmd("pkill -x mosquitto 2>/dev/null; sleep 0.5")
-        Path("/tmp/mosq_scenario.conf").write_text(
+        Path("/etc/mosquitto/mosq_scenario.conf").write_text(
             "listener 1883 0.0.0.0\nallow_anonymous true\n", encoding="utf-8")
-        broker = _start_service(srv, ["mosquitto", "-c", "/tmp/mosq_scenario.conf"])
+        broker = _start_service(srv, ["mosquitto", "-c", "/etc/mosquitto/mosq_scenario.conf"])
         _wait_port(srv, 1883)
         for number in range(1, 21):
             port = 5200 + number
