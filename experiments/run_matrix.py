@@ -3,7 +3,7 @@
 """Run the full normal / attack_no_qos / attack_qos experiment matrix.
 
 Must be called from the live Mininet CLI, with the network already running
-(python3 topology.py from inside network/), e.g.:
+(python3 topology.py from inside Network/), e.g.:
 
   mininet> py import sys; sys.path.insert(0, '..')
   mininet> py from experiments.run_matrix import run_matrix
@@ -66,7 +66,7 @@ MANIFEST_FIELDS = [
 
 def _build_combinations(include_edge_ai=True):
     combos = [("normal", None, 0)]
-    for attack_type, rates in (("syn_flood", (500, 1000, 5000)), ("udp_flood", (2000, 5000, 12000))):
+    for attack_type, rates in (("syn_flood", (1000, 5000, 20000)), ("udp_flood", (2000, 5000, 12000))):
         for rate in rates:
             combos.append(("attack_no_qos", attack_type, rate))
             combos.append(("attack_qos", attack_type, rate))

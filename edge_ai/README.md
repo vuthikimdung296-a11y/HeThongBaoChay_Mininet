@@ -64,11 +64,11 @@ Theo đề cương nghiên cứu, Gateway chỉ kiểm tra thông tin tiêu đ�
 
 ## 4. Hướng dẫn vận hành trong Mininet
 
-> **Quy ước đường dẫn.** Các node Mininet (`gw`, `srv`, `hs01`, `atk`...) chạy lệnh trong thư mục hiện tại của tiến trình `mn` (ở đây là `network/`), nên các đường dẫn tương đối như `edge_ai/...` hay `qos/...` sẽ **không tìm thấy file**. Hãy dùng đường dẫn tuyệt đối. Trong tài liệu này `<REPO>` là thư mục gốc của repo, ví dụ `/home/nhung/mininet_lab/HeThongBaoChay_Mininet`; thay bằng đường dẫn trên máy của bạn.
+> **Quy ước đường dẫn.** Các node Mininet (`gw`, `srv`, `hs01`, `atk`...) chạy lệnh trong thư mục hiện tại của tiến trình `mn` (ở đây là `Network/`), nên các đường dẫn tương đối như `edge_ai/...` hay `qos/...` sẽ **không tìm thấy file**. Hãy dùng đường dẫn tuyệt đối. Trong tài liệu này `<REPO>` là thư mục gốc của repo, ví dụ `/home/nhung/mininet_lab/HeThongBaoChay_Mininet`; thay bằng đường dẫn trên máy của bạn.
 
 ### Bước 1: Khởi động mạng ảo Mininet
 ```bash
-cd <REPO>/network
+cd <REPO>/Network
 sudo mn -c
 sudo python3 topology.py
 ```

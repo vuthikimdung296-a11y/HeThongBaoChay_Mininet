@@ -31,7 +31,7 @@ RTT_NORMAL_MS = 50.0     # KPI 2.1.3: RTT <= 50 ms khi bình thường
 RTT_LIMIT_MS = 200.0     # KPI 2.1.3: RTT <= 200 ms khi bị tấn công
 STALE_AFTER_S = 5.0      # quá 5 giây không có dữ liệu mới -> coi là mất kết nối
 
-LIVE_PATH = os.environ.get("LIVE_METRICS", "live_metrics.json")
+LIVE_PATH = os.environ.get("LIVE_METRICS", "/tmp/live_metrics.json")
 CMD_PATH = os.environ.get("SCENARIO_CMD", "/tmp/scenario_cmd.json")
 STATUS_PATH = os.environ.get("SCENARIO_STATUS", "/tmp/scenario_status.json")
 

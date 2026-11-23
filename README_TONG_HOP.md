@@ -25,7 +25,7 @@ atk (lab test) ────┘                    │
 
 | Thành phần | Vai trò |
 |---|---|
-| `network/` | Dựng Mininet, OVS, VLAN, địa chỉ IP và Gateway. |
+| `Network/` | Dựng Mininet, OVS, VLAN, địa chỉ IP và Gateway. |
 | `traffic/` | Sinh MQTT/camera traffic và ghi kết quả đo. `run_scenario.py` điều phối các lượt trong Mininet. |
 | `qos/` | Phân loại gói bằng nftables marks; `qos.sh` cấu hình/kiểm tra HTB và FQ-CoDel. |
 | `edge_ai/` | Trích đặc trưng header theo cửa sổ 1 giây, suy luận Random Forest và quản lý firewall riêng. |
@@ -54,7 +54,7 @@ cảm biến; mỗi tầng có 2 camera. Đây là mô hình gom nhóm, không p
 
 Mỗi link Mininet mặc định 100 Mbps và 1 ms. `s1` nối server vào mạng VLAN nên
 lưu lượng đến server đi qua Gateway; đây cũng là nút cổ chai cần lưu ý khi đọc
-RTT/thông lượng. Chi tiết cấu hình tham số nằm trong [network/config.py](network/config.py)
+RTT/thông lượng. Chi tiết cấu hình tham số nằm trong [Network/config.py](Network/config.py)
 và tài liệu/báo cáo trong [docs/bao_cao/](docs/bao_cao/).
 
 | Mạng | Vai trò | Dải địa chỉ |
@@ -95,7 +95,7 @@ pip install -r requirements.txt -r Web/dashboard/requirements.txt
 
 Không dùng `sudo pip install` trực tiếp vào Python hệ thống Ubuntu. Nếu topology
 cần chạy bằng Python trong virtualenv, gọi interpreter đó bằng quyền root, ví dụ:
-`sudo .venv/bin/python network/topology.py`.
+`sudo .venv/bin/python Network/topology.py`.
 
 Hai cách cài trên là lựa chọn môi trường: cài Python package qua `apt` để dùng với
 `sudo python3`, hoặc tạo `.venv` để cài bằng `pip`. Tránh trộn package giữa hai
@@ -106,7 +106,7 @@ môi trường mà không kiểm tra interpreter được gọi khi chạy dư�
 Trong terminal Ubuntu:
 
 ```bash
-cd <REPO>/network
+cd <REPO>/Network
 sudo systemctl start openvswitch-switch
 sudo modprobe 8021q
 sudo mn -c

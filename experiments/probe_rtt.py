@@ -14,7 +14,7 @@ repeatedly publishes a small QoS 1 "probe" message on a dedicated topic and
 times how long each PUBLISH takes to be PUBACK-ed. A sample that is not
 acknowledged within --timeout seconds counts as lost.
 
-Place this file in experiments/ (sibling of network/, traffic/, qos/).
+Place this file in experiments/ (sibling of Network/, traffic/, qos/).
 --index should differ from the sensor index used for real fire alarms in
 traffic/normal_mqtt.py (that script defaults to --alarm-index 1), so the
 probe's own connection does not share a source IP with the real alarm
