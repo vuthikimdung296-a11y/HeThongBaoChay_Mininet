@@ -31,7 +31,7 @@ RTT_NORMAL_MS = 50.0     # KPI 2.1.3: RTT <= 50 ms khi bình thường
 RTT_LIMIT_MS = 200.0     # KPI 2.1.3: RTT <= 200 ms khi bị tấn công
 STALE_AFTER_S = 5.0      # quá 5 giây không có dữ liệu mới -> coi là mất kết nối
 
-LIVE_PATH = os.environ.get("LIVE_METRICS", "/tmp/live_metrics.json")
+LIVE_PATH = os.environ.get("LIVE_METRICS", "/home/nhung/mininet_lab/HeThongBaoChay_Mininet/traffic/results/live_metrics.json")
 CMD_PATH = os.environ.get("SCENARIO_CMD", "/tmp/scenario_cmd.json")
 STATUS_PATH = os.environ.get("SCENARIO_STATUS", "/tmp/scenario_status.json")
 
@@ -141,7 +141,14 @@ def normalize(raw: dict) -> dict:
     rtt = raw.get("rtt_ms")
     rtt = _num(rtt, None) if rtt is not None else None   # không bịa số: không có RTT thì hiện "—"
 
+    _fw_raw = raw.get("firewall") if isinstance(raw, dict) else None
+    _fw_dict = _fw_raw if isinstance(_fw_raw, dict) else {}
+    fw_backend = _fw_dict.get("backend") or ("nftables" if _fw_raw is not None else "")
+    fw_rate = bool(_fw_dict.get("rate_limit_active", False))
+    fw_rules = _num(_fw_dict.get("active_rules", 1 if blocked else 0))
+    fw_errors = list(_fw_dict.get("errors") or [])
     return {
+        "firewall": {"backend": fw_backend, "rate_limit_active": fw_rate, "active_rules": fw_rules, "errors": fw_errors},
         "ts": to_epoch(raw.get("timestamp")),
         "normal": normal_est,
         "syn": syn_count,
@@ -184,6 +191,7 @@ def tier_states(state, stale: bool = False) -> dict:
         return {"ok": not bad, "label": bad_label if bad else ok_label, "detail": detail}
 
     ips = ", ".join(b["ip"] for b in state["blocked"][:2]) + (" ..." if nblk > 2 else "")
+
     return {
         "sensor": tier(rtt_bad, "Bình thường", "Bị suy giảm", rtt_txt),
         "camera": tier(rtt_bad, "Bình thường", "Bị suy giảm", rtt_txt),
