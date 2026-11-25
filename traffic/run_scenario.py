@@ -24,6 +24,24 @@ QOS_SCRIPT = ROOT / "qos" / "qos.sh"
 RESULTS = TRAFFIC / "results"
 
 
+class ScenarioAborted(Exception):
+    """Người dùng bấm Dừng trên dashboard."""
+
+
+def _wait(proc, timeout, abort=None):
+    """Giống proc.wait(timeout) nhưng thoát ngay khi cờ abort được bật."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if abort is not None and abort.is_set():
+            raise ScenarioAborted()
+        rc = proc.poll()
+        if rc is not None:
+            return rc
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(proc.args, timeout)
+        time.sleep(0.3)
+
+
 def _wait_port(host, port: int, timeout: float = 8.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -46,11 +64,13 @@ def _ping_metrics(output: str):
     values = [float(x) for x in re.findall(r"time[=<]([0-9]+(?:\.[0-9]+)?)\s*ms", output)]
     loss_match = re.search(r"([0-9.]+)% packet loss", output)
     values_sorted = sorted(values)
+
     def percentile(p):
         if not values_sorted:
             return None
         index = max(0, min(len(values_sorted) - 1, int((p / 100) * (len(values_sorted) - 1) + 0.999999)))
         return round(values_sorted[index], 4)
+
     return {
         "ping_samples": len(values),
         "rtt_avg_ms": round(sum(values) / len(values), 4) if values else None,
@@ -70,11 +90,13 @@ def _window_metrics(samples, w0: float, w1: float, interval: float = 0.2):
     """RTT/mat goi CHI trong cua so [w0, w1] (giay epoch). Mat goi = 1 - so tra loi / so goi du kien."""
     vals = sorted(r for t, r in samples if w0 <= t <= w1)
     expected = max(1, round((w1 - w0) / interval))
+
     def pct(p):
         if not vals:
             return None
         i = max(0, min(len(vals) - 1, int((p / 100) * (len(vals) - 1) + 0.999999)))
         return round(vals[i], 4)
+
     return {
         "win_samples": len(vals),
         "win_rtt_avg_ms": round(sum(vals) / len(vals), 4) if vals else None,
@@ -97,7 +119,7 @@ def _append_csv(path: Path, row: dict):
 def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
                  attack_rate=1000, attack_duration=20, spoof=False,
                  camera_bandwidth="4M", telemetry_interval=30,
-                 probe_dscp=48, strict=False):
+                 probe_dscp=48, strict=False, abort=None):
     """Run one repeatable experiment using Mininet host objects from the CLI.
 
     Scenarios: normal, attack_no_qos, attack_qos. QoS is applied only in
@@ -106,6 +128,7 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
     probe_dscp: DSCP cua goi ping do RTT (48 = giong ban tin canh bao -> lop 1:10; None = DSCP 0).
     strict: True = dung ngay khi bat ky tien trinh con nao thoat loi (hanh vi cu);
             False = ghi lai tien trinh loi vao CSV (cot failed_processes, alarm_ok) va chay tiep.
+    abort: threading.Event; khi duoc set (nut Dung tren dashboard) thi ngung va don dep tien trinh.
     Cac cot win_* la RTT/mat goi TRONG CUA SO TAN CONG (hoac cua so 10 s cung vi tri o kich ban normal).
     """
     if scenario not in {"normal", "attack_no_qos", "attack_qos", "attack_qos_edge_ai"}:
@@ -141,11 +164,13 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
     started_iso = datetime.now(timezone.utc).isoformat()
     try:
         if edge_ai_enabled:
+            # Detector chay den khi bi terminate o khoi finally, KHONG dua vao `processes`
+            # (neu khong vong cho se doi no het duration + 30 giay roi ghi "timeout").
             detector_cmd = [sys.executable, str(ROOT / "edge_ai" / "gateway_detector.py"),
                             "--iface", "gw-eth0", "gw-eth1", "--firewall", "nftables",
-                            "--state-file", "/tmp/live_metrics.json"]
+                            "--state-file", str(RESULTS / "live_metrics.json")]
             detector = gw.popen(detector_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            processes.append(("Edge AI Detector", detector))
+
         # Use a dedicated iperf3 listener per camera so simultaneous clients do
         # not contend for a single server session.
         # Mosquitto 2.x mac dinh CHI nhan ket noi tu chinh may no (localhost) va tu choi nac danh,
@@ -199,7 +224,11 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         win_start, win_len = probe_t0 + attack_start_delay, float(attack_duration if scenario != "normal" else 10)
 
         if scenario != "normal":
-            time.sleep(attack_start_delay)
+            if abort is not None:
+                if abort.wait(attack_start_delay):
+                    raise ScenarioAborted()
+            else:
+                time.sleep(attack_start_delay)
             win_start = time.time()          # moc that su luc bat dau tan cong
             atk = net.get("atk")
             attack_cmd = [sys.executable, str(TRAFFIC / "attack.py"), "--type", attack_type,
@@ -217,7 +246,7 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         # Wait for generators and probes; camera/attack scripts have their own bounded lifetime.
         for label, proc in processes:
             try:
-                returncode = proc.wait(timeout=duration + 30)
+                returncode = _wait(proc, duration + 30, abort)
             except subprocess.TimeoutExpired as exc:
                 proc.terminate()
                 try:
@@ -256,6 +285,12 @@ def run_scenario(net, scenario="normal", duration=60, attack_type="syn_flood",
         print("Attack event log:", RESULTS / "attack_events.csv")
         return row
     finally:
+        if abort is not None and abort.is_set():
+            # Dung giua chung: don tien trinh con ma terminate() khong voi toi
+            # (iperf3 client, hping3... do camera_iperf.py / attack.py sinh ra).
+            gw.cmd("pkill -f 'iperf3 -c' 2>/dev/null; "
+                   "pkill -f '(attack|camera_iperf|normal_mqtt)\\.py' 2>/dev/null; "
+                   "pkill hping3 2>/dev/null; true")
         for _, proc in processes:
             if proc.poll() is None:
                 proc.terminate()

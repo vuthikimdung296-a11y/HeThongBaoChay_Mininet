@@ -34,7 +34,8 @@ for p in (ROOT, ROOT / "Web" / "dashboard"):
 
 import dashboard_logic as dl  # noqa: E402
 
-DEFAULT_AI = f"python3 {ROOT / 'edge_ai' / 'gateway_ai.py'} --iface gw-eth0 gw-eth1"
+DEFAULT_AI = (f"python3 {ROOT / 'edge_ai' / 'gateway_ai.py'} --iface gw-eth0 gw-eth1 "
+              f"--firewall nftables --state-file {ROOT / 'traffic' / 'results' / 'live_metrics.json'}")
 DEFAULT_RESET = "nft delete table inet ddos 2>/dev/null || true"
 
 
@@ -62,7 +63,8 @@ def stop_ai(net, proc, reset_cmd):
         net.get("gw").cmd(reset_cmd)
 
 
-def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None):
+def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None, abort=None):
+    import re
     from traffic.run_scenario import run_scenario
     scenario = cmd["scenario"]
     use_ai = scenario == "attack_qos"
@@ -70,15 +72,15 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cm
     results.mkdir(parents=True, exist_ok=True)
     ai = None
     note = ""
+    eff_reset = reset_cmd if reset_cmd is not None else DEFAULT_RESET
     try:
-        eff_reset = reset_cmd if reset_cmd is not None else DEFAULT_RESET
         if eff_reset:
             net.get("gw").cmd(eff_reset)
         if use_ai:
             ai = start_ai(net, ai_cmd, results / "gateway_ai.log")
             note = "AI đã bật. " if ai else "AI CHƯA BẬT (không tìm thấy gateway_ai.py), chỉ có QoS. "
         elif monitor_cmd:      # chỉ để Web có dữ liệu khi demo; KHÔNG dùng khi đo benchmark
-            eff_mon = monitor_cmd
+            eff_mon = re.sub(r"--firewall\s+\S+", "--firewall none", monitor_cmd)
             if "--firewall" not in eff_mon:
                 eff_mon = f"{eff_mon} --firewall none"
             ai = start_ai(net, eff_mon, results / "gateway_monitor.log")
@@ -92,7 +94,7 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cm
             kw.update(attack_type=cmd.get("attack_type", "syn_flood"),
                       attack_rate=int(cmd.get("attack_rate", 1000)),
                       attack_duration=int(cmd.get("attack_duration", 20)))
-        row = run_scenario(net, **kw)
+        row = run_scenario(net, abort=abort, **kw)
         qos_note = ("QoS đã bật và kiểm tra thành công. " if row.get("qos_enabled")
                     else "QoS không bật trong kịch bản này. ")
         return note + qos_note + (f"RTT TB {row.get('rtt_avg_ms')} ms, P95 {row.get('rtt_p95_ms')} ms, "
@@ -100,13 +102,20 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cm
     finally:
         stop_ai(net, ai, eff_reset)
 
-
-def serve(net, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None, poll_s=1.0):
-    """Vòng lặp chính: nhận lệnh từ dashboard. Một luồng riêng ghi heartbeat mỗi giây để Web biết
-    daemon còn sống ngay cả khi kịch bản đang chạy (chặn vòng lặp chính hàng chục giây)."""
+def serve(net, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=DEFAULT_AI, poll_s=1.0):
+    """Vòng lặp chính: nhận lệnh từ dashboard. Kịch bản chạy ở thread riêng để vòng lặp này
+    luôn đọc được lệnh (kể cả lệnh stop). Một luồng khác ghi heartbeat mỗi giây."""
     import threading
     cur = {"state": "idle", "scenario": None, "message": "Sẵn sàng"}
     stop = threading.Event()
+    job = {"thread": None, "abort": False, "result": None, "evt": None}
+
+    def worker(cmd, evt):
+        try:
+            job["result"] = ("done", run_command(net, cmd, ai_cmd, reset_cmd, monitor_cmd, abort=evt))
+        except Exception as e:                      # noqa: BLE001
+            traceback.print_exc()
+            job["result"] = ("error", str(e))
 
     def beat():
         while not stop.is_set():
@@ -118,21 +127,43 @@ def serve(net, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None, pol
     print("[daemon] sẵn sàng; mở dashboard và bấm nút kịch bản. Ctrl+C để thoát.", flush=True)
     try:
         while True:
+            # 1. Kịch bản vừa kết thúc (xong, lỗi, hoặc bị dừng)?
+            t = job["thread"]
+            if t is not None and not t.is_alive():
+                kind, msg = job["result"] or ("error", "không có kết quả")
+                if job["abort"]:
+                    cur.update(state="stopped", message="Đã dừng theo yêu cầu")
+                else:
+                    cur.update(state=kind, message=msg)
+                print(f"[daemon] {cur['state']}: {cur['message']}", flush=True)
+                job.update(thread=None, abort=False, result=None, evt=None)
+                t = None
+
+            # 2. Có lệnh mới?
             cmd = dl.read_command()
             if cmd and cmd.get("id") != last_id:
                 last_id = cmd["id"]
                 name = cmd["scenario"]
-                print(f"[daemon] nhận lệnh {cmd['id']}: {name}", flush=True)
-                cur.update(state="running", scenario=name, message="Đang chạy...", started=time.time())
-                try:
-                    msg = run_command(net, cmd, ai_cmd, reset_cmd, monitor_cmd)
-                    cur.update(state="done", message=msg)
-                    print(f"[daemon] xong {name}: {msg}", flush=True)
-                except Exception as e:                  # noqa: BLE001 - báo lỗi lên Web, không sập daemon
-                    traceback.print_exc()
-                    cur.update(state="error", message=str(e))
+                if name == "stop":
+                    if t is not None:
+                        print("[daemon] nhận lệnh DỪNG", flush=True)
+                        job["abort"] = True
+                        cur.update(state="stopping", message="Đang dừng, dọn tiến trình...")
+                        job["evt"].set()
+                    else:
+                        print("[daemon] bỏ qua lệnh dừng: không có kịch bản đang chạy", flush=True)
+                elif t is not None:
+                    print(f"[daemon] bỏ qua {name}: đang bận", flush=True)
+                else:
+                    print(f"[daemon] nhận lệnh {cmd['id']}: {name}", flush=True)
+                    cur.update(state="running", scenario=name, message="Đang chạy...", started=time.time())
+                    job["evt"] = threading.Event()
+                    job["thread"] = threading.Thread(target=worker, args=(cmd, job["evt"]), daemon=True)
+                    job["thread"].start()
             time.sleep(poll_s)
     except KeyboardInterrupt:
+        if job["evt"] is not None:
+            job["evt"].set()
         cur.update(state="stopped", scenario=None, message="Daemon đã dừng")
         dl.write_status(**cur)
         print("[daemon] dừng.", flush=True)

@@ -2,17 +2,17 @@
 """gateway_detector.py - Module Edge AI và Tường lửa tự động tại Gateway (chuẩn hóa theo yêu cầu Tổ 2).
 
 Chức năng:
-  1. Giám sát lưu lượng ingress tại gw (gw-eth0 và gw-eth1) theo cửa sổ 1 giây qua features.WindowAggregator.
-  2. Dùng mô hình Random Forest (4 đặc trưng lõi) để suy luận xác suất tấn công.
-  3. Làm mượt trạng thái chống rung giật (anti-flapping):
-     - Kích hoạt TẤN CÔNG khi xác suất >= --threshold liên tiếp --k-on cửa sổ (mặc định 2).
-     - Trở về BÌNH THƯỜNG khi < threshold liên tiếp --k-off cửa sổ (mặc định 3) VÀ đã duy trì ít nhất --hold giây.
-  4. Quản lý tường lửa nftables (bảng riêng 'inet ddos', priority -300 prerouting):
-     - Không can thiệp hoặc flush bảng QoS 'inet qos' (priority -150).
-     - Whitelist tuyệt đối 3 subnet nội bộ (VLAN 10, 20, 30) và IP Gateway.
-     - Lớp 1: Giới hạn tốc độ trên giao diện ngoài gw-eth1 (chống tấn công giả mạo IP nguồn).
-     - Lớp 2: Chặn IP ngoại vi cụ thể đưa vào set @blocklist (timeout 60s).
-  5. Xuất nhật ký trạng thái nguyên tử theo chuẩn UTC ISO 8601 (--state-file / live_metrics.json).
+1. Giám sát lưu lượng ingress tại gw (gw-eth0 và gw-eth1) theo cửa sổ 1 giây qua features.WindowAggregator.
+2. Dùng mô hình Random Forest (4 đặc trưng lõi) để suy luận xác suất tấn công.
+3. Làm mượt trạng thái chống rung giật (anti-flapping):
+  - Kích hoạt TẤN CÔNG khi xác suất >= --threshold liên tiếp --k-on cửa sổ (mặc định 2).
+  - Trở về BÌNH THƯỜNG khi < threshold liên tiếp --k-off cửa sổ (mặc định 3) VÀ đã duy trì ít nhất --hold giây.
+4. Quản lý tường lửa nftables (bảng riêng 'inet ddos', priority -300 prerouting):
+  - Không can thiệp hoặc flush bảng QoS 'inet qos' (priority -150).
+  - Whitelist tuyệt đối 3 subnet nội bộ (VLAN 10, 20, 30) và IP Gateway.
+  - Lớp 1: Giới hạn tốc độ trên giao diện ngoài gw-eth1 (chống tấn công giả mạo IP nguồn).
+  - Lớp 2: Chặn IP ngoại vi cụ thể đưa vào set @blocklist (timeout 60s).
+5. Xuất nhật ký trạng thái nguyên tử theo chuẩn UTC ISO 8601 (--state-file / live_metrics.json).
 """
 import argparse
 import csv
@@ -20,10 +20,12 @@ import datetime
 import ipaddress
 import json
 import os
+import re
 import shlex
-import subprocess
 import signal
+import subprocess
 import sys
+import threading
 import time
 
 try:
@@ -39,7 +41,9 @@ LABELS = {0: 'binh_thuong', 1: 'tan_cong'}
 
 # WHITELIST CÁC DẢI MẠNG AN TOÀN NỘI BỘ (TUYỆT ĐỐI KHÔNG CHẶN NHẦM)
 WHITELIST_NETWORKS = [
-    ipaddress.ip_network('10.0.30.10/32'),     # Máy chủ MQTT srv (10.0.30.10)
+    ipaddress.ip_network('10.0.10.0/23'),      # VLAN 10 - Tầng cảm biến
+    ipaddress.ip_network('10.0.20.0/24'),      # VLAN 20 - Tầng camera
+    ipaddress.ip_network('10.0.30.0/24'),      # VLAN 30 - Tầng máy chủ MQTT (srv: 10.0.30.10)
     ipaddress.ip_network('192.168.100.1/32'),  # IP Gateway trên giao diện gw-eth1
     ipaddress.ip_network('127.0.0.0/8'),       # Loopback nội bộ
 ]
@@ -85,14 +89,14 @@ class FirewallManager:
                 if record_error:
                     err = f"Lỗi lệnh [{cmd_str}]: {stderr_clean}"
                     self.errors.append(err)
-                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr)
+                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr, flush=True)
                 return False
             return True
         except Exception as e:
             if record_error:
                 err = f"Ngoại lệ [{cmd_str}]: {str(e)}"
                 self.errors.append(err)
-                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr)
+                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr, flush=True)
             return False
 
     def _run_args(self, args, record_error=True):
@@ -111,36 +115,39 @@ class FirewallManager:
                 if record_error:
                     err = f"Lỗi lệnh [{' '.join(args)}]: {stderr_clean}"
                     self.errors.append(err)
-                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr)
+                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr, flush=True)
                 return False
             return True
         except Exception as e:
             if record_error:
                 err = f"Ngoại lệ [{' '.join(args)}]: {str(e)}"
                 self.errors.append(err)
-                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr)
+                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr, flush=True)
             return False
 
     def _init_rules(self):
         if self.backend == 'nftables':
-            self._run_args(["nft", "add", "table", "inet", "ddos"], record_error=False)
+            self._run_args(["nft", "add", "table", "inet", "ddos"], record_error=True)
             self._run_args(
                 ["nft", "add", "set", "inet", "ddos", "blocklist", "{ type ipv4_addr; flags timeout; timeout 60s; }"],
-                record_error=False,
+                record_error=True,
             )
             self._run_args(
                 ["nft", "add", "chain", "inet", "ddos", "prerouting", "{ type filter hook prerouting priority -300; policy accept; }"],
-                record_error=False,
+                record_error=True,
             )
-            if self._run_args(["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"], record_error=False):
+            if self._run_args(
+                ["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"],
+                record_error=True,
+            ):
                 self.active_rules = max(self.active_rules, 1)
-                print("[FIREWALL] Khởi tạo thành công bảng nftables 'inet ddos' (priority -300)")
+                print("[FIREWALL] Khởi tạo thành công bảng nftables 'inet ddos' (priority -300)", flush=True)
         elif self.backend == 'iptables':
             self._run_cmd("iptables -N DDOS_FILTER", record_error=False)
             res = subprocess.run(shlex.split("iptables -C FORWARD -j DDOS_FILTER"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if res.returncode != 0:
-                self._run_cmd("iptables -I FORWARD 1 -j DDOS_FILTER", record_error=False)
-            print("[FIREWALL] Khởi tạo thành công chain iptables DDOS_FILTER")
+                self._run_cmd("iptables -I FORWARD 1 -j DDOS_FILTER", record_error=True)
+            print("[FIREWALL] Khởi tạo thành công chain iptables DDOS_FILTER", flush=True)
 
     def _ensure_nft_ready(self):
         if self.backend != 'nftables' or not self.enabled:
@@ -159,78 +166,113 @@ class FirewallManager:
                 ok_syn = self._run_args([
                     "nft", "add", "rule", "inet", "ddos", "prerouting",
                     "iifname", self.outside_iface,
-                    "tcp", "flags", "&", "(syn|ack)", "==", "syn",
+                    "tcp", "flags", "syn", "/", "syn,ack",
                     "limit", "rate", "over", "200/second", "counter", "drop"
-                ], record_error=False)
+                ], record_error=True)
                 ok_udp = self._run_args([
                     "nft", "add", "rule", "inet", "ddos", "prerouting",
                     "iifname", self.outside_iface,
                     "meta", "l4proto", "udp",
                     "limit", "rate", "over", "500/second", "counter", "drop"
-                ], record_error=False)
+                ], record_error=True)
                 if ok_syn and ok_udp:
                     self.rate_limit_active = True
                     self.active_rules += 2
-                    print(f"[FIREWALL] Đã kích hoạt rate-limit trên {self.outside_iface}")
+                    print(f"[FIREWALL] Đã kích hoạt rate-limit trên {self.outside_iface}", flush=True)
             # 2. Block IP ngoại vi nếu có và không nằm trong whitelist
             if target_ip and target_ip != 'spoofed':
                 if is_whitelisted(target_ip):
-                    print(f"[SECURITY] Bỏ qua IP {target_ip} do nằm trong Whitelist nội bộ!")
+                    print(f"[SECURITY] Bỏ qua IP {target_ip} do nằm trong Whitelist nội bộ!", flush=True)
                 else:
                     if target_ip not in self.blocked_ips:
-                        if self._run_args(["nft", "add", "element", "inet", "ddos", "blocklist", f"{{ {target_ip} }}"], record_error=False):
+                        if self._run_args(
+                            ["nft", "add", "element", "inet", "ddos", "blocklist", f"{{ {target_ip} }}"],
+                            record_error=True,
+                        ):
                             self.blocked_ips.add(target_ip)
-                            print(f"[FIREWALL] Đưa {target_ip} vào blocklist (timeout 60s)")
+                            print(f"[FIREWALL] Đưa {target_ip} vào blocklist (timeout 60s)", flush=True)
         elif self.backend == 'iptables':
             if target_ip and target_ip != 'spoofed':
                 if is_whitelisted(target_ip):
-                    print(f"[SECURITY] Bỏ qua IP {target_ip} do nằm trong Whitelist!")
+                    print(f"[SECURITY] Bỏ qua IP {target_ip} do nằm trong Whitelist!", flush=True)
                 else:
                     if target_ip not in self.blocked_ips:
                         cmd = f"iptables -I DDOS_FILTER -s {target_ip} -j DROP"
-                        if self._run_cmd(cmd, record_error=False):
+                        if self._run_cmd(cmd, record_error=True):
                             self.blocked_ips.add(target_ip)
-                            print(f"[FIREWALL] iptables DROP IP {target_ip}")
+                            print(f"[FIREWALL] iptables DROP IP {target_ip}", flush=True)
 
     def remove_attack_mitigation(self):
         if not self.enabled:
             return
         if self.backend == 'nftables':
             self._ensure_nft_ready()
-            self._run_args(["nft", "flush", "chain", "inet", "ddos", "prerouting"], record_error=False)
-            self._run_args(["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"], record_error=False)
-            self._run_args(["nft", "flush", "set", "inet", "ddos", "blocklist"], record_error=False)
+            self._run_args(["nft", "flush", "chain", "inet", "ddos", "prerouting"], record_error=True)
+            self._run_args(
+                ["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"],
+                record_error=True,
+            )
+            self._run_args(["nft", "flush", "set", "inet", "ddos", "blocklist"], record_error=True)
             self.blocked_ips.clear()
             self.rate_limit_active = False
             self.active_rules = 1
-            print("[FIREWALL] Đã gỡ bỏ rate-limit và xóa danh sách IP bị chặn.")
+            print("[FIREWALL] Đã gỡ bỏ rate-limit và xóa danh sách IP bị chặn.", flush=True)
         elif self.backend == 'iptables':
-            self._run_cmd("iptables -F DDOS_FILTER", record_error=False)
+            self._run_cmd("iptables -F DDOS_FILTER", record_error=True)
             self.blocked_ips.clear()
             self.rate_limit_active = False
-            print("[FIREWALL] Đã giải phóng rule iptables.")
+            print("[FIREWALL] Đã giải phóng rule iptables.", flush=True)
 
     def cleanup(self):
         if not self.enabled:
             return
         if self.backend == 'nftables':
-            self._run_cmd("nft delete table inet ddos 2>/dev/null || true")
-            print("[FIREWALL] Đã xóa bảng inet ddos an toàn (bảo toàn bảng inet qos).")
+            self._run_cmd("nft delete table inet ddos 2>/dev/null || true", record_error=False)
+            print("[FIREWALL] Đã xóa bảng inet ddos an toàn (bảo toàn bảng inet qos).", flush=True)
         elif self.backend == 'iptables':
-            self._run_cmd("iptables -D FORWARD -j DDOS_FILTER")
-            self._run_cmd("iptables -F DDOS_FILTER")
-            self._run_cmd("iptables -X DDOS_FILTER")
-            print("[FIREWALL] Đã dọn dẹp chain iptables.")
+            self._run_cmd("iptables -D FORWARD -j DDOS_FILTER", record_error=False)
+            self._run_cmd("iptables -F DDOS_FILTER", record_error=False)
+            self._run_cmd("iptables -X DDOS_FILTER", record_error=False)
+            print("[FIREWALL] Đã dọn dẹp chain iptables.", flush=True)
+
+
+class RttProbe(threading.Thread):
+    """Ping định kỳ ở thread riêng để không làm chậm việc bắt gói."""
+
+    def __init__(self, target, interval=1.0):
+        super().__init__(daemon=True)
+        self.target = target
+        self.interval = interval
+        self.value = None      # None = chưa đo; 999.0 = mất gói / timeout
+        self._stop_evt = threading.Event()
+
+    def run(self):
+        while not self._stop_evt.is_set():
+            try:
+                out = subprocess.run(
+                    ["ping", "-c", "1", "-W", "1", "-Q", "0xc0", self.target],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, timeout=3
+                ).stdout
+                m = re.search(r"time[=<]([\d.]+)\s*ms", out)
+                self.value = float(m.group(1)) if m else 999.0
+            except Exception:
+                self.value = 999.0
+            self._stop_evt.wait(self.interval)
+
+    def stop(self):
+        self._stop_evt.set()
 
 
 class Detector:
     def __init__(self, model_dir, threshold, k_on, k_off, state_file, log_path, on_attack, on_normal,
-                 quiet=False, hold=10, firewall_backend='nftables', outside_iface='gw-eth1', enable_firewall=True):
+                 quiet=False, hold=10, firewall_backend='nftables', outside_iface='gw-eth1',
+                 enable_firewall=True, rtt_target=None):
         model_file = os.path.join(model_dir, 'edge_ai_model.joblib')
         if not os.path.exists(model_file):
             model_file = os.path.join(model_dir, 'rf_edge.joblib')
         json_file = os.path.splitext(model_file)[0] + '.json'
-        
+
         self.model = joblib.load(model_file) if (joblib and os.path.exists(model_file)) else None
         if os.path.exists(json_file):
             self.feats = json.load(open(json_file)).get('features', FEATURES_CORE)
@@ -249,6 +291,11 @@ class Detector:
 
         self.fw = FirewallManager(backend=firewall_backend, outside_iface=outside_iface, enabled=enable_firewall)
 
+        self.rtt_probe = None
+        if rtt_target:
+            self.rtt_probe = RttProbe(rtt_target)
+            self.rtt_probe.start()
+
         self.log_f = open(log_path, 'w', newline='') if log_path else None
         self.log = csv.writer(self.log_f) if self.log_f else None
         if self.log:
@@ -256,13 +303,44 @@ class Detector:
 
     def on_window(self, row, attacker_ip=None):
         t0 = time.perf_counter()
+        rate = float(row.get('packet_rate', 0))
+        syn = float(row.get('syn_count', 0))
+        byte_rate = float(row.get('byte_rate', 0))
+
+        # Xác định IP nguồn nghi vấn trước để phân biệt lưu lượng nội bộ (camera/cảm biến) với ngoại vi
+        eff_ip = attacker_ip
+        if (not eff_ip or eff_ip == 'spoofed') and isinstance(row, dict):
+            for k in ('top_src_ip', 'attacker_ip', 'src_ip', 'max_src_ip', 'suspect_ip', 'source_ip'):
+                v = row.get(k)
+                if v and str(v).strip() not in ('', 'None', 'null', 'spoofed'):
+                    cand = str(v).strip()
+                    if not is_whitelisted(cand):
+                        eff_ip = cand
+                        break
+
+        ext_rate = float(row.get('ext_packet_rate', 0))
+        ext_byte_rate = float(row.get('ext_byte_rate', 0))
+        top_ext_share = float(row.get('top_ext_share', 0))
+        has_ext_attacker = bool(eff_ip and eff_ip != 'spoofed' and not is_whitelisted(eff_ip))
+
         if self.model is not None:
             x = [[float(row.get(f, 0)) for f in self.feats]]
             prob = float(self.model.predict_proba(x)[0][1])
         else:
-            rate = float(row.get('packet_rate', 0))
-            syn = float(row.get('syn_count', 0))
-            prob = 1.0 if (rate > 2000 or syn > 500) else 0.0
+            prob = 0.0
+
+        # 1. Nếu KHÔNG có lưu lượng ngoại vi (chỉ có 20 camera + 300 cảm biến nội bộ) và không có SYN flood
+        #    (nới ngưỡng syn < 350 để tránh nhiễu khi 300 cảm biến đồng loạt kết nối lại tới MQTT broker)
+        if ext_rate == 0 and not has_ext_attacker and syn < 350:
+            prob = min(prob, 0.05)
+
+        # 2. Kích hoạt phát hiện tấn công dựa trên đặc trưng lưu lượng ngoại vi & tập trung 1 IP
+        is_ext_metric_flood = (ext_rate > 1500 and top_ext_share > 0.7) or (ext_byte_rate > 900_000 or ext_rate > 2500)
+        is_ext_ip_flood = has_ext_attacker and (rate > 2500 or byte_rate > 2_500_000)
+        is_syn_flood = (syn > 500)
+
+        if is_ext_metric_flood or is_ext_ip_flood or is_syn_flood:
+            prob = max(prob, 0.98)
 
         raw = 1 if prob >= self.th else 0
         w_start = float(row.get('window_start', time.time()))
@@ -273,21 +351,15 @@ class Detector:
                 self.first_anomaly_ts = w_start
         else:
             self.up, self.down = 0, self.down + 1
+            if self.state == 0:
+                self.first_anomaly_ts = None
 
         prev = self.state
-        eff_ip = attacker_ip
-        if (not eff_ip or eff_ip == 'spoofed') and isinstance(row, dict):
-            for k in ('top_src_ip', 'attacker_ip', 'src_ip', 'max_src_ip', 'suspect_ip', 'source_ip'):
-                v = row.get(k)
-                if v and str(v).strip() not in ('', 'None', 'null', 'spoofed'):
-                    eff_ip = str(v).strip()
-                    break
+
         if self.state == 0 and self.up >= self.k_on:
             self.state = 1
-            self.reaction_time_s = max(0.1, round(w_start - self.first_anomaly_ts, 3))  if self.first_anomaly_ts else float(self.k_on)
-            print(f"[FIREWALL] Thời gian phản ứng tường lửa: {self.reaction_time_s}s (ip={eff_ip})")
-            self.fw.apply_attack_mitigation(target_ip=eff_ip)
-        elif self.state == 1 and eff_ip and eff_ip != 'spoofed' and eff_ip not in self.fw.blocked_ips:
+            self.reaction_time_s = max(0.1, round(w_start - self.first_anomaly_ts, 3)) if self.first_anomaly_ts else float(self.k_on)
+            print(f"[FIREWALL] Thời gian phản ứng tường lửa: {self.reaction_time_s}s (ip={eff_ip})", flush=True)
             self.fw.apply_attack_mitigation(target_ip=eff_ip)
         elif (self.state == 1 and self.down >= self.k_off
               and w_start - (self.attack_since or w_start) >= self.hold):
@@ -295,6 +367,8 @@ class Detector:
             self.first_anomaly_ts = None
             self.reaction_time_s = None
             self.fw.remove_attack_mitigation()
+        elif self.state == 1:
+            self.fw.apply_attack_mitigation(target_ip=eff_ip)
 
         if self.state == 1 and prev == 0:
             self.attack_since = w_start
@@ -320,7 +394,7 @@ class Detector:
             'syn_packets': int(row.get('syn_count', 0)),
             'udp_packets': round(udp_packets, 4),
             'blocked_ips': list(self.fw.blocked_ips),
-            'rtt_ms': None,
+            'rtt_ms': self.rtt_probe.value if self.rtt_probe else None,
             'prob_attack': round(prob, 4),
             'timestamp_epoch': round(w_start, 4),
             'timestamp_utc': now_utc,
@@ -342,7 +416,7 @@ class Detector:
                 json.dump(rec, f, indent=2)
             os.replace(tmp, self.state_file)
         except Exception as e:
-            print(f"[ERROR] Ghi state file: {e}", file=sys.stderr)
+            print(f"[ERROR] Ghi state file: {e}", file=sys.stderr, flush=True)
 
         if self.log:
             self.log.writerow([w_start, round(prob, 4), raw, self.state] +
@@ -361,6 +435,8 @@ class Detector:
             subprocess.Popen(shlex.split(cmd), env=env)
 
     def close(self):
+        if self.rtt_probe:
+            self.rtt_probe.stop()
         if self.log_f:
             self.log_f.close()
         self.fw.cleanup()
@@ -383,6 +459,8 @@ def main():
     ap.add_argument('--log', default=None)
     ap.add_argument('--firewall', choices=['nftables', 'iptables', 'none'], default='nftables')
     ap.add_argument('--outside-iface', default='gw-eth1')
+    ap.add_argument('--rtt-target', default='10.0.30.10', help='IP để đo RTT (gateway -> server)')
+    ap.add_argument('--no-rtt', action='store_true', help='Tắt đo RTT')
     ap.add_argument('--on-attack', default=None)
     ap.add_argument('--on-normal', default=None)
     ap.add_argument('--quiet', action='store_true')
@@ -402,8 +480,10 @@ def main():
         hold=a.hold,
         firewall_backend=a.firewall,
         outside_iface=a.outside_iface,
-        enable_firewall=enable_fw
+        enable_firewall=enable_fw,
+        rtt_target=None if a.no_rtt else a.rtt_target
     )
+
     def _handle_sig(signum, _frame):
         raise SystemExit(0)
 

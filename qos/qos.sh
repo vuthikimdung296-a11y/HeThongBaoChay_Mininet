@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 IFACE="${QOS_IFACE:-gw-eth0.30}"
-ROOT_RATE="${QOS_ROOT_RATE:-100mbit}"
+ROOT_RATE="${QOS_ROOT_RATE:-40mbit}"
 NFT_FILE="${QOS_NFT_FILE:-${SCRIPT_DIR}/marks.nft}"
 
 need_root() {
@@ -29,12 +29,10 @@ start_qos() {
   tc qdisc add dev "$IFACE" root handle 1: htb default 13 r2q 100
   tc class add dev "$IFACE" parent 1: classid 1:1 htb rate "$ROOT_RATE" ceil "$ROOT_RATE"
 
-  # Guaranteed rates total 76 Mbit/s, below the 100 Mbit/s root capacity.
-  # ceil permits borrowing unused bandwidth; prio 0 is served before prio 3.
-  tc class add dev "$IFACE" parent 1:1 classid 1:10 htb rate 10mbit ceil 100mbit prio 0
-  tc class add dev "$IFACE" parent 1:1 classid 1:11 htb rate 5mbit  ceil 100mbit prio 1
-  tc class add dev "$IFACE" parent 1:1 classid 1:12 htb rate 60mbit ceil 90mbit  prio 2
-  tc class add dev "$IFACE" parent 1:1 classid 1:13 htb rate 1mbit  ceil 10mbit  prio 3
+  tc class add dev "$IFACE" parent 1:1 classid 1:10 htb rate 6mbit  ceil 40mbit prio 0
+  tc class add dev "$IFACE" parent 1:1 classid 1:11 htb rate 4mbit  ceil 40mbit prio 1
+  tc class add dev "$IFACE" parent 1:1 classid 1:12 htb rate 25mbit ceil 35mbit prio 2
+  tc class add dev "$IFACE" parent 1:1 classid 1:13 htb rate 2mbit  ceil 15mbit prio 3
 
   # Active queue management at each leaf reduces persistent queueing delay.
   tc qdisc add dev "$IFACE" parent 1:10 handle 110: fq_codel

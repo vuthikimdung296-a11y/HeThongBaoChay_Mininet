@@ -5,7 +5,7 @@ N_FLOORS = 10              # so tang
 SENSORS_PER_FLOOR = 30     # cam bien moi tang  -> 300 cam bien
 CAMS_PER_FLOOR = 2         # camera moi tang    -> 20 camera
 
-LINK_BW = 100              # Mbps, moi lien ket (so do: [100])
+LINK_BW = 40              # Mbps, moi lien ket (so do: [100])
 LINK_DELAY = '1ms'         # tre moi lien ket   (so do: [1] ms)
 
 VLAN_SENSOR, VLAN_CAM, VLAN_SRV = 10, 20, 30

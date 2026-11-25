@@ -8,7 +8,7 @@ Cần:    pip/apt cài streamlit>=1.37 và pandas.
   - sơ đồ trạng thái 4 tầng Xanh/Đỏ,
   - biểu đồ gói tin theo thời gian thực (+ RTT so với KPI),
   - nhật ký IP bị chặn,
-  - 3 nút kích hoạt kịch bản của Tổ 3 (gửi lệnh qua file cho experiments/scenario_daemon.py).
+  - 3 nút kích hoạt kịch bản của Tổ 3 + nút Dừng (gửi lệnh qua file cho experiments/scenario_daemon.py).
 """
 import time
 import zipfile
@@ -48,6 +48,13 @@ ss.setdefault("history", [])
 ss.setdefault("blocked_log", [])
 ss.setdefault("active_blocked", set())
 
+
+def clear_history():
+    ss.history.clear()
+    ss.blocked_log.clear()
+    ss.active_blocked.clear()
+
+
 # ------------------------------------------------------------------ sidebar
 with st.sidebar:
     st.header("Cấu hình")
@@ -56,9 +63,7 @@ with st.sidebar:
     refresh = st.slider("Chu kỳ làm mới (giây)", 1, 5, 1)
     window = st.slider("Số điểm hiển thị trên biểu đồ", 30, 180, 90, step=10)
     if st.button("Xóa lịch sử biểu đồ và nhật ký"):
-        ss.history.clear()
-        ss.blocked_log.clear()
-        ss.active_blocked.clear()
+        clear_history()
     st.caption("Ngưỡng KPI: RTT ≤ 50 ms (bình thường), ≤ 200 ms (khi bị tấn công), "
                "phản ứng của tường lửa ≤ 3 giây.")
 
@@ -78,12 +83,12 @@ with st.expander("Kết quả kiểm thử Mininet từ ZIP", expanded=True):
             cameras = vm_results["cameras"]
             attacks = vm_results["attacks"]
             matrix = vm_results["matrix"]
-            status = matrix.get("status", pd.Series(dtype=str)).astype(str).str.lower()
+            mstatus = matrix.get("status", pd.Series(dtype=str)).astype(str).str.lower()
             summary = st.columns(4)
             summary[0].metric("Lượt đo kịch bản", len(scenarios))
             summary[1].metric("Lượt ma trận", len(matrix))
-            summary[2].metric("Lượt ma trận thành công", int(status.eq("ok").sum()))
-            summary[3].metric("Lượt ma trận lỗi", int(status.eq("error").sum()))
+            summary[2].metric("Lượt ma trận thành công", int(mstatus.eq("ok").sum()))
+            summary[3].metric("Lượt ma trận lỗi", int(mstatus.eq("error").sum()))
 
             st.subheader("RTT và mất gói theo lượt đo")
             st.dataframe(scenarios, hide_index=True, use_container_width=True)
@@ -112,7 +117,7 @@ with st.expander("Kết quả kiểm thử Mininet từ ZIP", expanded=True):
 
             st.subheader("Ma trận chạy thử")
             st.dataframe(matrix, hide_index=True, use_container_width=True)
-            failures = matrix.loc[status.eq("error")]
+            failures = matrix.loc[mstatus.eq("error")]
             if not failures.empty:
                 st.warning(f"Có {len(failures)} lượt lỗi trong ma trận; xem cột error ở bảng trên.")
 
@@ -122,27 +127,41 @@ with st.expander("Tham số kịch bản", expanded=False):
     c1, c2, c3, c4, c5 = st.columns(5)
     duration = c1.number_input("Thời lượng (s)", 20, 600, 60, step=10)
     attack_type = c2.selectbox("Kiểu tấn công", ["syn_flood", "udp_flood"])
-    attack_rate = c3.number_input("Tốc độ (pps)", 100, 5000, 1000, step=100)
+    attack_rate = c3.number_input("Tốc độ (pps)", 100, 20000, 1000, step=1000)
     attack_duration = c4.number_input("Thời gian tấn công (s)", 5, 300, 20, step=5)
     camera_bandwidth = c5.selectbox("Băng thông camera", ["2.5M", "4M", "2M", "1M"], index=0)
 
-cols = st.columns(3)
-status_file = dl.read_status()
-alive = dl.daemon_alive(status_file)
-running = bool(status_file) and status_file.get("state") == "running"
-for col, (key, label) in zip(cols, dl.SCENARIOS.items()):
-    if col.button(label, use_container_width=True, disabled=running or not alive, key=f"btn_{key}"):
-        ss.history.clear()
-        ss.blocked_log.clear()
-        ss.active_blocked.clear()
-        cmd = dl.send_command(key, duration=int(duration), attack_type=attack_type,
-                              attack_rate=int(attack_rate), attack_duration=int(attack_duration),
-                              camera_bandwidth=camera_bandwidth)
-        st.toast(f"Đã gửi lệnh {label} (mã {cmd['id']})")
-if not alive:
-    st.warning("Chưa thấy scenario_daemon đang chạy nên các nút bị khóa. Tại dấu nhắc `mininet>` chạy:  "
-               "`py import sys; sys.path.insert(0, '.')`  rồi  "
-               "`py from Web.experiments.scenario_daemon import serve; serve(net)`")
+def render_controls():
+    status_file = dl.read_status()
+    alive = dl.daemon_alive(status_file)
+    busy = dl.scenario_busy(status_file)        # running/stopping -> khóa 3 nút kịch bản
+    stoppable = dl.can_stop(status_file)        # chỉ running mới cho bấm Dừng
+
+    cols = st.columns(4)
+    for col, (key, label) in zip(cols[:3], dl.SCENARIOS.items()):
+        if col.button(label, use_container_width=True, disabled=busy or not alive, key=f"btn_{key}"):
+            clear_history()
+            cmd = dl.send_command(key, duration=int(duration), attack_type=attack_type,
+                                  attack_rate=int(attack_rate), attack_duration=int(attack_duration),
+                                  camera_bandwidth=camera_bandwidth)
+            st.toast(f"Đã gửi lệnh {label} (mã {cmd['id']})")
+
+    if cols[3].button("⏹ Dừng kịch bản", use_container_width=True, type="primary",
+                      disabled=not stoppable, key="btn_stop"):
+        cmd = dl.send_stop()
+        st.toast(f"Đã gửi lệnh dừng (mã {cmd['id']})")
+
+    if not alive:
+        st.warning("Chưa thấy scenario_daemon đang chạy nên các nút bị khóa. Tại dấu nhắc `mininet>` chạy:  "
+                   "`py import sys; sys.path.insert(0, '.')`  rồi  "
+                   "`py from Web.experiments.scenario_daemon import serve; serve(net)`")
+
+
+try:
+    controls = st.fragment(run_every=refresh)(render_controls)   # streamlit >= 1.37
+    controls()
+except (AttributeError, TypeError):
+    render_controls()
 
 
 # ------------------------------------------------------------------ phần cập nhật liên tục
@@ -158,12 +177,17 @@ def render_live():
     sf = dl.read_status()
     if sf and dl.daemon_alive(sf):
         msg = sf.get("message", "")
-        name = dl.SCENARIOS.get(sf.get("scenario"), sf.get("scenario", ""))
-        if sf.get("state") == "running":
+        name = dl.SCENARIOS.get(sf.get("scenario"), sf.get("scenario") or "")
+        sstate = sf.get("state")
+        if sstate == "running":
             st.info(f"Đang chạy kịch bản: {name}. {msg}")
-        elif sf.get("state") == "error":
+        elif sstate == "stopping":
+            st.info(f"Đang dừng kịch bản {name}: {msg}")
+        elif sstate == "stopped":
+            st.warning(f"Kịch bản {name} đã bị dừng. {msg}")
+        elif sstate == "error":
             st.error(f"Kịch bản {name} lỗi: {msg}")
-        elif sf.get("state") == "done":
+        elif sstate == "done":
             st.success(f"Kịch bản {name} đã xong. {msg}")
 
     if state is None:
@@ -236,10 +260,7 @@ def render_live():
         })
         pk = pk.dropna(axis=1, how="all")
         st.subheader("Gói tin theo thời gian thực (gói/giây)")
-        try:
-            st.line_chart(pk)
-        except TypeError:
-            st.line_chart(pk)
+        st.line_chart(pk)
         if df["rtt_ms"].notna().any():
             st.subheader("RTT so với ngưỡng KPI (ms)")
             rt = pd.DataFrame({"RTT": df["rtt_ms"], "Ngưỡng 200 ms": dl.RTT_LIMIT_MS,

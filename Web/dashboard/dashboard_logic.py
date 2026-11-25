@@ -31,10 +31,12 @@ RTT_NORMAL_MS = 50.0     # KPI 2.1.3: RTT <= 50 ms khi bình thường
 RTT_LIMIT_MS = 200.0     # KPI 2.1.3: RTT <= 200 ms khi bị tấn công
 STALE_AFTER_S = 5.0      # quá 5 giây không có dữ liệu mới -> coi là mất kết nối
 
-LIVE_PATH = os.environ.get("LIVE_METRICS", "/home/nhung/mininet_lab/HeThongBaoChay_Mininet/traffic/results/live_metrics.json")
 LIVE_RTT_PATH = os.environ.get("LIVE_RTT", "/tmp/live_rtt.json")
 CMD_PATH = os.environ.get("SCENARIO_CMD", "/tmp/scenario_cmd.json")
 STATUS_PATH = os.environ.get("SCENARIO_STATUS", "/tmp/scenario_status.json")
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LIVE_PATH = os.environ.get("LIVE_METRICS", os.path.join(_ROOT, "traffic", "results", "live_metrics.json"))
 
 SCENARIOS = {
     "normal": "1. Bình thường",
@@ -307,6 +309,12 @@ def send_command(scenario: str, **params) -> dict:
     cmd = {"id": uuid.uuid4().hex[:8], "ts": time.time(), "scenario": scenario, **params}
     atomic_write(CMD_PATH, cmd)
     return cmd
+    
+def send_stop() -> dict:
+    """Gửi lệnh dừng kịch bản đang chạy tới scenario_daemon."""
+    cmd = {"id": uuid.uuid4().hex[:8], "ts": time.time(), "scenario": "stop"}
+    atomic_write(CMD_PATH, cmd)
+    return cmd
 
 
 def read_command():
@@ -326,3 +334,16 @@ def read_status():
 
 def daemon_alive(status, max_age: float = 6.0) -> bool:
     return bool(status) and (time.time() - _num(status.get("heartbeat"), 0)) < max_age
+    
+# Các trạng thái daemon ghi ra STATUS_PATH
+BUSY_STATES = ("running", "stopping")
+
+
+def scenario_busy(status) -> bool:
+    """True nếu daemon còn sống và đang chạy hoặc đang dừng một kịch bản."""
+    return daemon_alive(status) and status.get("state") in BUSY_STATES
+
+
+def can_stop(status) -> bool:
+    """Chỉ cho bấm Dừng khi kịch bản đang chạy (không phải khi đang dừng dở)."""
+    return daemon_alive(status) and status.get("state") == "running"

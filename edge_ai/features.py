@@ -12,10 +12,28 @@ from collections import Counter
 
 FEATURES_CORE = ['packet_rate', 'byte_rate', 'syn_count', 'ip_dispersion']
 FEATURES_EXT = FEATURES_CORE + ['src_entropy', 'udp_ratio', 'avg_pkt_len']
-EXTRA_ROW_KEYS = ['top_src_ip', 'top_src_ips']
+EXTRA_ROW_KEYS = ['top_src_ip', 'top_src_ips', 'ext_packet_rate', 'ext_byte_rate', 'top_ext_share']
 CSV_COLUMNS = ['window_start'] + FEATURES_EXT
 
 PROTO_TCP, PROTO_UDP, PROTO_ICMP = 6, 17, 1
+
+# Các dải mạng nội bộ an toàn (dạng (network_int, mask_int) để lọc nhanh theo từng gói)
+_INTERNAL_NETS = [
+    (int(ipaddress.IPv4Address('10.0.10.0')), 0xFFFFFE00),       # 10.0.10.0/23 (VLAN 10 - Cảm biến)
+    (int(ipaddress.IPv4Address('10.0.20.0')), 0xFFFFFF00),       # 10.0.20.0/24 (VLAN 20 - Camera)
+    (int(ipaddress.IPv4Address('10.0.30.0')), 0xFFFFFF00),       # 10.0.30.0/24 (VLAN 30 - Máy chủ MQTT)
+    (int(ipaddress.IPv4Address('192.168.100.1')), 0xFFFFFFFF),   # IP Gateway gw-eth1
+    (int(ipaddress.IPv4Address('127.0.0.0')), 0xFF000000),       # Loopback nội bộ
+]
+
+
+def _is_internal_src(src_val):
+    if not isinstance(src_val, int):
+        try:
+            src_val = int(ipaddress.IPv4Address(str(src_val)))
+        except ValueError:
+            return False
+    return any((src_val & mask) == net for net, mask in _INTERNAL_NETS)
 
 
 def _fmt_ip(src_val):
@@ -66,6 +84,9 @@ class WindowAggregator:
         self.syn = 0
         self.udp = 0
         self.srcs = Counter()
+        self.ext_pkts = 0
+        self.ext_bytes = 0
+        self.ext_srcs = Counter()
 
     def _flush_current(self):
         n = self.pkts
@@ -73,16 +94,26 @@ class WindowAggregator:
             total = float(n)
             entropy = max(0.0, -sum((c / total) * math.log2(c / total) for c in self.srcs.values()))
             ranked_ips = [_fmt_ip(ip) for ip, _ in self.srcs.most_common(5)]
+            ext_ranked = [(_fmt_ip(ip), cnt) for ip, cnt in self.ext_srcs.most_common(5)]
+            top_ext_ip = ext_ranked[0][0] if ext_ranked else None
+            top_ext_share = (ext_ranked[0][1] / float(self.ext_pkts)) if (ext_ranked and self.ext_pkts > 0) else 0.0
+
             row = {'packet_rate': n / self.win, 'byte_rate': self.bytes / self.win,
                    'syn_count': self.syn, 'ip_dispersion': len(self.srcs),
                    'src_entropy': entropy, 'udp_ratio': self.udp / total,
                    'avg_pkt_len': self.bytes / total,
-                   'top_src_ip': ranked_ips[0] if ranked_ips else None,
-                   'top_src_ips': ranked_ips}
+                   'top_src_ip': top_ext_ip if top_ext_ip else (ranked_ips[0] if ranked_ips else None),
+                   'top_src_ips': [ip for ip, _ in ext_ranked] if ext_ranked else ranked_ips,
+                   'ext_packet_rate': self.ext_pkts / self.win,
+                   'ext_byte_rate': self.ext_bytes / self.win,
+                   'top_ext_share': top_ext_share}
         else:
             row = {k: 0 for k in FEATURES_EXT}
             row['top_src_ip'] = None
             row['top_src_ips'] = []
+            row['ext_packet_rate'] = 0.0
+            row['ext_byte_rate'] = 0.0
+            row['top_ext_share'] = 0.0
         row['window_start'] = self.cur * self.win
         self._reset()
         self.on_window(row)
@@ -104,6 +135,10 @@ class WindowAggregator:
             if proto == PROTO_UDP:
                 self.udp += 1
             self.srcs[src] += 1
+            if not _is_internal_src(src):
+                self.ext_pkts += 1
+                self.ext_bytes += length
+                self.ext_srcs[src] += 1
 
     def flush_until(self, now):
         """Dong cac cua so da ket thuc truoc thoi diem `now` (dung khi chay truc tuyen

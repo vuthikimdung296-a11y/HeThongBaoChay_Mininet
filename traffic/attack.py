@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MAX_DURATION_S = 300
-MAX_RATE_PPS = 5000
+MAX_RATE_PPS = 20000
 
 
 def build_command(kind: str, rate_pps: int, target: str, port: int,
@@ -82,7 +82,7 @@ def main() -> None:
     ap.add_argument("--duration", type=int, default=15)
     ap.add_argument("--target", required=True, help="explicit target IP inside the lab")
     ap.add_argument("--port", type=int, default=1883)
-    ap.add_argument("--payload-bytes", type=int, default=512)
+    ap.add_argument("--payload-bytes", type=int, default=1400)
     ap.add_argument("--spoof", action="store_true")
     ap.add_argument("--allow-spoof", action="store_true", help="explicit opt-in for isolated namespace experiments")
     ap.add_argument("--episode", default="manual")
