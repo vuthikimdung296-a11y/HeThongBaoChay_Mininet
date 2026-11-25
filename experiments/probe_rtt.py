@@ -42,7 +42,7 @@ except ImportError as exc:
     ) from exc
 
 HERE = Path(__file__).resolve().parent
-NETWORK_DIR = HERE.parent / "network"
+NETWORK_DIR = HERE.parent / "Network"
 if not NETWORK_DIR.is_dir():
     raise RuntimeError(f"network directory not found: {NETWORK_DIR}")
 sys.path.insert(0, str(NETWORK_DIR))
