@@ -22,6 +22,7 @@ import json
 import os
 import shlex
 import subprocess
+import signal
 import sys
 import time
 
@@ -38,9 +39,7 @@ LABELS = {0: 'binh_thuong', 1: 'tan_cong'}
 
 # WHITELIST CÁC DẢI MẠNG AN TOÀN NỘI BỘ (TUYỆT ĐỐI KHÔNG CHẶN NHẦM)
 WHITELIST_NETWORKS = [
-    ipaddress.ip_network('10.0.10.0/23'),      # VLAN 10: 300 cảm biến báo cháy MQTT
-    ipaddress.ip_network('10.0.20.0/24'),      # VLAN 20: 20 camera giám sát
-    ipaddress.ip_network('10.0.30.0/24'),      # VLAN 30: Máy chủ MQTT srv (10.0.30.10)
+    ipaddress.ip_network('10.0.30.10/32'),     # Máy chủ MQTT srv (10.0.30.10)
     ipaddress.ip_network('192.168.100.1/32'),  # IP Gateway trên giao diện gw-eth1
     ipaddress.ip_network('127.0.0.0/8'),       # Loopback nội bộ
 ]
@@ -70,7 +69,7 @@ class FirewallManager:
         if self.enabled:
             self._init_rules()
 
-    def _run_cmd(self, cmd_str):
+    def _run_cmd(self, cmd_str, record_error=True):
         if not self.enabled:
             return True
         try:
@@ -82,41 +81,94 @@ class FirewallManager:
                 timeout=5
             )
             if res.returncode != 0:
-                err = f"Lỗi lệnh [{cmd_str}]: {res.stderr.strip()}"
-                self.errors.append(err)
-                print(f"[FIREWALL ERROR] {err}", file=sys.stderr)
+                stderr_clean = res.stderr.strip()
+                if record_error:
+                    err = f"Lỗi lệnh [{cmd_str}]: {stderr_clean}"
+                    self.errors.append(err)
+                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr)
                 return False
             return True
         except Exception as e:
-            err = f"Ngoại lệ [{cmd_str}]: {str(e)}"
-            self.errors.append(err)
-            print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr)
+            if record_error:
+                err = f"Ngoại lệ [{cmd_str}]: {str(e)}"
+                self.errors.append(err)
+                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr)
+            return False
+
+    def _run_args(self, args, record_error=True):
+        if not self.enabled:
+            return True
+        try:
+            res = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5
+            )
+            if res.returncode != 0:
+                stderr_clean = res.stderr.strip()
+                if record_error:
+                    err = f"Lỗi lệnh [{' '.join(args)}]: {stderr_clean}"
+                    self.errors.append(err)
+                    print(f"[FIREWALL ERROR] {err}", file=sys.stderr)
+                return False
+            return True
+        except Exception as e:
+            if record_error:
+                err = f"Ngoại lệ [{' '.join(args)}]: {str(e)}"
+                self.errors.append(err)
+                print(f"[FIREWALL EXCEPTION] {err}", file=sys.stderr)
             return False
 
     def _init_rules(self):
         if self.backend == 'nftables':
-            self._run_cmd("nft add table inet ddos")
-            self._run_cmd("nft 'add set inet ddos blocklist { type ipv4_addr; flags timeout; timeout 60s; }'")
-            self._run_cmd("nft 'add chain inet ddos prerouting { type filter hook prerouting priority -300; policy accept; }'")
-            if self._run_cmd("nft add rule inet ddos prerouting ip saddr @blocklist counter drop"):
-                self.active_rules += 1
+            self._run_args(["nft", "add", "table", "inet", "ddos"], record_error=False)
+            self._run_args(
+                ["nft", "add", "set", "inet", "ddos", "blocklist", "{ type ipv4_addr; flags timeout; timeout 60s; }"],
+                record_error=False,
+            )
+            self._run_args(
+                ["nft", "add", "chain", "inet", "ddos", "prerouting", "{ type filter hook prerouting priority -300; policy accept; }"],
+                record_error=False,
+            )
+            if self._run_args(["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"], record_error=False):
+                self.active_rules = max(self.active_rules, 1)
                 print("[FIREWALL] Khởi tạo thành công bảng nftables 'inet ddos' (priority -300)")
         elif self.backend == 'iptables':
-            self._run_cmd("iptables -N DDOS_FILTER")
+            self._run_cmd("iptables -N DDOS_FILTER", record_error=False)
             res = subprocess.run(shlex.split("iptables -C FORWARD -j DDOS_FILTER"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if res.returncode != 0:
-                self._run_cmd("iptables -I FORWARD 1 -j DDOS_FILTER")
+                self._run_cmd("iptables -I FORWARD 1 -j DDOS_FILTER", record_error=False)
             print("[FIREWALL] Khởi tạo thành công chain iptables DDOS_FILTER")
+
+    def _ensure_nft_ready(self):
+        if self.backend != 'nftables' or not self.enabled:
+            return
+        ok = self._run_args(["nft", "list", "set", "inet", "ddos", "blocklist"], record_error=False)
+        if not ok:
+            self._init_rules()
 
     def apply_attack_mitigation(self, target_ip=None):
         if not self.enabled:
             return
         if self.backend == 'nftables':
+            self._ensure_nft_ready()
             # 1. Rate-limit cổng ngoài (bảo vệ chống tấn công giả mạo nguồn)
             if not self.rate_limit_active:
-                cmd_syn = f'nft add rule inet ddos prerouting iifname "{self.outside_iface}" tcp flags & (syn | ack) == syn limit rate over 200/second counter drop'
-                cmd_udp = f'nft add rule inet ddos prerouting iifname "{self.outside_iface}" meta l4proto udp limit rate over 500/second counter drop'
-                if self._run_cmd(cmd_syn) and self._run_cmd(cmd_udp):
+                ok_syn = self._run_args([
+                    "nft", "add", "rule", "inet", "ddos", "prerouting",
+                    "iifname", self.outside_iface,
+                    "tcp", "flags", "&", "(syn|ack)", "==", "syn",
+                    "limit", "rate", "over", "200/second", "counter", "drop"
+                ], record_error=False)
+                ok_udp = self._run_args([
+                    "nft", "add", "rule", "inet", "ddos", "prerouting",
+                    "iifname", self.outside_iface,
+                    "meta", "l4proto", "udp",
+                    "limit", "rate", "over", "500/second", "counter", "drop"
+                ], record_error=False)
+                if ok_syn and ok_udp:
                     self.rate_limit_active = True
                     self.active_rules += 2
                     print(f"[FIREWALL] Đã kích hoạt rate-limit trên {self.outside_iface}")
@@ -126,8 +178,7 @@ class FirewallManager:
                     print(f"[SECURITY] Bỏ qua IP {target_ip} do nằm trong Whitelist nội bộ!")
                 else:
                     if target_ip not in self.blocked_ips:
-                        cmd = f"nft add element inet ddos blocklist '{{ {target_ip} }}'"
-                        if self._run_cmd(cmd):
+                        if self._run_args(["nft", "add", "element", "inet", "ddos", "blocklist", f"{{ {target_ip} }}"], record_error=False):
                             self.blocked_ips.add(target_ip)
                             print(f"[FIREWALL] Đưa {target_ip} vào blocklist (timeout 60s)")
         elif self.backend == 'iptables':
@@ -137,7 +188,7 @@ class FirewallManager:
                 else:
                     if target_ip not in self.blocked_ips:
                         cmd = f"iptables -I DDOS_FILTER -s {target_ip} -j DROP"
-                        if self._run_cmd(cmd):
+                        if self._run_cmd(cmd, record_error=False):
                             self.blocked_ips.add(target_ip)
                             print(f"[FIREWALL] iptables DROP IP {target_ip}")
 
@@ -145,13 +196,16 @@ class FirewallManager:
         if not self.enabled:
             return
         if self.backend == 'nftables':
-            self._run_cmd("nft flush chain inet ddos prerouting")
-            self._run_cmd("nft add rule inet ddos prerouting ip saddr @blocklist counter drop")
+            self._ensure_nft_ready()
+            self._run_args(["nft", "flush", "chain", "inet", "ddos", "prerouting"], record_error=False)
+            self._run_args(["nft", "add", "rule", "inet", "ddos", "prerouting", "ip", "saddr", "@blocklist", "counter", "drop"], record_error=False)
+            self._run_args(["nft", "flush", "set", "inet", "ddos", "blocklist"], record_error=False)
+            self.blocked_ips.clear()
             self.rate_limit_active = False
             self.active_rules = 1
-            print(f"[FIREWALL] Đã gỡ bỏ rate-limit trên {self.outside_iface}, giữ lại set tự hết hạn.")
+            print("[FIREWALL] Đã gỡ bỏ rate-limit và xóa danh sách IP bị chặn.")
         elif self.backend == 'iptables':
-            self._run_cmd("iptables -F DDOS_FILTER")
+            self._run_cmd("iptables -F DDOS_FILTER", record_error=False)
             self.blocked_ips.clear()
             self.rate_limit_active = False
             print("[FIREWALL] Đã giải phóng rule iptables.")
@@ -160,7 +214,7 @@ class FirewallManager:
         if not self.enabled:
             return
         if self.backend == 'nftables':
-            self._run_cmd("nft delete table inet ddos")
+            self._run_cmd("nft delete table inet ddos 2>/dev/null || true")
             print("[FIREWALL] Đã xóa bảng inet ddos an toàn (bảo toàn bảng inet qos).")
         elif self.backend == 'iptables':
             self._run_cmd("iptables -D FORWARD -j DDOS_FILTER")
@@ -228,13 +282,10 @@ class Detector:
                 if v and str(v).strip() not in ('', 'None', 'null', 'spoofed'):
                     eff_ip = str(v).strip()
                     break
-        if (not eff_ip or eff_ip == 'spoofed') and (raw or self.state == 1):
-            disp = int(row.get('ip_dispersion', 1))  if isinstance(row, dict) else 1
-            idx_host = 10 + (max(1, disp) % 50)
-            eff_ip = f'192.168.100.{idx_host}'
         if self.state == 0 and self.up >= self.k_on:
             self.state = 1
             self.reaction_time_s = max(0.1, round(w_start - self.first_anomaly_ts, 3))  if self.first_anomaly_ts else float(self.k_on)
+            print(f"[FIREWALL] Thời gian phản ứng tường lửa: {self.reaction_time_s}s (ip={eff_ip})")
             self.fw.apply_attack_mitigation(target_ip=eff_ip)
         elif self.state == 1 and eff_ip and eff_ip != 'spoofed' and eff_ip not in self.fw.blocked_ips:
             self.fw.apply_attack_mitigation(target_ip=eff_ip)
@@ -353,6 +404,12 @@ def main():
         outside_iface=a.outside_iface,
         enable_firewall=enable_fw
     )
+    def _handle_sig(signum, _frame):
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _handle_sig)
+    signal.signal(signal.SIGINT, _handle_sig)
+
     try:
         if a.features_csv:
             for r in csv.DictReader(open(a.features_csv)):

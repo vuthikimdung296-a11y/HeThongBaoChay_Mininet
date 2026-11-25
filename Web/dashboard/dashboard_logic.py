@@ -32,6 +32,7 @@ RTT_LIMIT_MS = 200.0     # KPI 2.1.3: RTT <= 200 ms khi bị tấn công
 STALE_AFTER_S = 5.0      # quá 5 giây không có dữ liệu mới -> coi là mất kết nối
 
 LIVE_PATH = os.environ.get("LIVE_METRICS", "/home/nhung/mininet_lab/HeThongBaoChay_Mininet/traffic/results/live_metrics.json")
+LIVE_RTT_PATH = os.environ.get("LIVE_RTT", "/tmp/live_rtt.json")
 CMD_PATH = os.environ.get("SCENARIO_CMD", "/tmp/scenario_cmd.json")
 STATUS_PATH = os.environ.get("SCENARIO_STATUS", "/tmp/scenario_status.json")
 
@@ -137,9 +138,21 @@ def normalize(raw: dict) -> dict:
     # Ước lượng thông số hiển thị từ các đặc trưng lõi
     normal_est = max(0.0, packet_rate - syn_count)
 
-    # 3. RTT (đọc từ raw hoặc gán mặc định an toàn cho hệ thống)
+    # 3. RTT (đọc từ raw hoặc fallback sang /tmp/live_rtt.json)
     rtt = raw.get("rtt_ms")
-    rtt = _num(rtt, None) if rtt is not None else None   # không bịa số: không có RTT thì hiện "—"
+    rtt = _num(rtt, None) if rtt is not None else None
+    if rtt is None:
+        rtt = read_live_rtt()
+
+    if "udp_packets" in raw and raw.get("udp_packets") is not None:
+        udp_est = _num(raw.get("udp_packets"), 0.0)
+    elif "udp_ratio" in features and features.get("udp_ratio") is not None:
+        udp_est = _num(features.get("udp_ratio"), 0.0) * packet_rate
+    else:
+        udp_est = 0.0
+
+    prob_atk = raw.get("prob_attack", raw.get("prob"))
+    prob_atk = _num(prob_atk, None) if prob_atk is not None else None
 
     _fw_raw = raw.get("firewall") if isinstance(raw, dict) else None
     _fw_dict = _fw_raw if isinstance(_fw_raw, dict) else {}
@@ -152,14 +165,22 @@ def normalize(raw: dict) -> dict:
         "ts": to_epoch(raw.get("timestamp")),
         "normal": normal_est,
         "syn": syn_count,
-        "udp": _num(features.get("byte_rate", 0)) / 1000.0,
+        "udp": udp_est,
         "packet_rate": packet_rate,
+        "prob_attack": prob_atk,
         "rtt_ms": rtt,
         "status_raw": str(raw.get("status", "")),
         "status": classify_status(raw.get("status")),
         "blocked": blocked,
         "simulated": False,  # Xác nhận đây là dữ liệu thật từ Edge AI Gateway
     }
+def read_live_rtt(rtt_path: str = LIVE_RTT_PATH):
+    d, _ = load_json(rtt_path)
+    if not isinstance(d, dict):
+        return None
+    val = d.get("rtt_ms")
+    return _num(val, None) if val is not None else None
+
 
 
 def is_stale(state, now=None) -> bool:
@@ -259,7 +280,7 @@ def update_history(hist: list, state: dict, maxlen: int = 180) -> bool:
     if hist and abs(hist[-1]["ts"] - state["ts"]) < 1e-6:
         return False
     hist.append({"ts": state["ts"], "normal": state["normal"], "syn": state["syn"],
-                 "udp": state["udp"], "rtt_ms": state["rtt_ms"]})
+                 "udp": state["udp"], "packet_rate": state.get("packet_rate", 0.0), "rtt_ms": state["rtt_ms"]})
     del hist[:-maxlen]
     return True
 

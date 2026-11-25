@@ -35,6 +35,7 @@ for p in (ROOT, ROOT / "Web" / "dashboard"):
 import dashboard_logic as dl  # noqa: E402
 
 DEFAULT_AI = f"python3 {ROOT / 'edge_ai' / 'gateway_ai.py'} --iface gw-eth0 gw-eth1"
+DEFAULT_RESET = "nft delete table inet ddos 2>/dev/null || true"
 
 
 def start_ai(net, ai_cmd, log_path):
@@ -61,7 +62,7 @@ def stop_ai(net, proc, reset_cmd):
         net.get("gw").cmd(reset_cmd)
 
 
-def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=None, monitor_cmd=None):
+def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None):
     from traffic.run_scenario import run_scenario
     scenario = cmd["scenario"]
     use_ai = scenario == "attack_qos"
@@ -70,15 +71,23 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=None, monitor_cmd=None):
     ai = None
     note = ""
     try:
-        if reset_cmd:
-            net.get("gw").cmd(reset_cmd)
+        eff_reset = reset_cmd if reset_cmd is not None else DEFAULT_RESET
+        if eff_reset:
+            net.get("gw").cmd(eff_reset)
         if use_ai:
             ai = start_ai(net, ai_cmd, results / "gateway_ai.log")
             note = "AI đã bật. " if ai else "AI CHƯA BẬT (không tìm thấy gateway_ai.py), chỉ có QoS. "
         elif monitor_cmd:      # chỉ để Web có dữ liệu khi demo; KHÔNG dùng khi đo benchmark
-            ai = start_ai(net, monitor_cmd, results / "gateway_monitor.log")
+            eff_mon = monitor_cmd
+            if "--firewall" not in eff_mon:
+                eff_mon = f"{eff_mon} --firewall none"
+            ai = start_ai(net, eff_mon, results / "gateway_monitor.log")
             note = "(Edge AI chỉ giám sát, không chặn) " if ai else ""
-        kw = dict(scenario=scenario, duration=int(cmd.get("duration", 60)))
+        kw = dict(
+            scenario=scenario,
+            duration=int(cmd.get("duration", 60)),
+            camera_bandwidth=str(cmd.get("camera_bandwidth", "2.5M")),
+        )
         if scenario != "normal":
             kw.update(attack_type=cmd.get("attack_type", "syn_flood"),
                       attack_rate=int(cmd.get("attack_rate", 1000)),
@@ -89,10 +98,10 @@ def run_command(net, cmd, ai_cmd=DEFAULT_AI, reset_cmd=None, monitor_cmd=None):
         return note + qos_note + (f"RTT TB {row.get('rtt_avg_ms')} ms, P95 {row.get('rtt_p95_ms')} ms, "
                        f"P99 {row.get('rtt_p99_ms')} ms, mất gói {row.get('ping_packet_loss_percent')}%")
     finally:
-        stop_ai(net, ai, reset_cmd)
+        stop_ai(net, ai, eff_reset)
 
 
-def serve(net, ai_cmd=DEFAULT_AI, reset_cmd=None, monitor_cmd=None, poll_s=1.0):
+def serve(net, ai_cmd=DEFAULT_AI, reset_cmd=DEFAULT_RESET, monitor_cmd=None, poll_s=1.0):
     """Vòng lặp chính: nhận lệnh từ dashboard. Một luồng riêng ghi heartbeat mỗi giây để Web biết
     daemon còn sống ngay cả khi kịch bản đang chạy (chặn vòng lặp chính hàng chục giây)."""
     import threading

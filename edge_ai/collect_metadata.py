@@ -24,7 +24,7 @@ PACKET_OUTGOING = 4   # pkttype cua Linux: goi do chinh may nay gui ra -> bo qua
 
 def make_writer(path):
     f = open(path, 'w', newline='')
-    w = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+    w = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction='ignore')
     w.writeheader()
 
     def write(row):

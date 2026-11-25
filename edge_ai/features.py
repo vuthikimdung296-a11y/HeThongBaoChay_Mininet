@@ -7,13 +7,21 @@ Chi dung truong header (IP nguon, do dai IP, giao thuc, co SYN), khong doc paylo
 """
 import math
 import threading
+import ipaddress
 from collections import Counter
 
 FEATURES_CORE = ['packet_rate', 'byte_rate', 'syn_count', 'ip_dispersion']
 FEATURES_EXT = FEATURES_CORE + ['src_entropy', 'udp_ratio', 'avg_pkt_len']
+EXTRA_ROW_KEYS = ['top_src_ip', 'top_src_ips']
 CSV_COLUMNS = ['window_start'] + FEATURES_EXT
 
 PROTO_TCP, PROTO_UDP, PROTO_ICMP = 6, 17, 1
+
+
+def _fmt_ip(src_val):
+    if isinstance(src_val, int):
+        return str(ipaddress.IPv4Address(src_val))
+    return str(src_val)
 
 
 def parse_frame(raw):
@@ -64,12 +72,17 @@ class WindowAggregator:
         if n:
             total = float(n)
             entropy = max(0.0, -sum((c / total) * math.log2(c / total) for c in self.srcs.values()))
+            ranked_ips = [_fmt_ip(ip) for ip, _ in self.srcs.most_common(5)]
             row = {'packet_rate': n / self.win, 'byte_rate': self.bytes / self.win,
                    'syn_count': self.syn, 'ip_dispersion': len(self.srcs),
                    'src_entropy': entropy, 'udp_ratio': self.udp / total,
-                   'avg_pkt_len': self.bytes / total}
+                   'avg_pkt_len': self.bytes / total,
+                   'top_src_ip': ranked_ips[0] if ranked_ips else None,
+                   'top_src_ips': ranked_ips}
         else:
             row = {k: 0 for k in FEATURES_EXT}
+            row['top_src_ip'] = None
+            row['top_src_ips'] = []
         row['window_start'] = self.cur * self.win
         self._reset()
         self.on_window(row)

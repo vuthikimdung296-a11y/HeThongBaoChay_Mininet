@@ -119,11 +119,12 @@ with st.expander("Kết quả kiểm thử Mininet từ ZIP", expanded=True):
 # ------------------------------------------------------------------ nút kịch bản
 st.subheader("Kích hoạt kịch bản thực nghiệm (Tổ 3)")
 with st.expander("Tham số kịch bản", expanded=False):
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     duration = c1.number_input("Thời lượng (s)", 20, 600, 60, step=10)
     attack_type = c2.selectbox("Kiểu tấn công", ["syn_flood", "udp_flood"])
     attack_rate = c3.number_input("Tốc độ (pps)", 100, 5000, 1000, step=100)
     attack_duration = c4.number_input("Thời gian tấn công (s)", 5, 300, 20, step=5)
+    camera_bandwidth = c5.selectbox("Băng thông camera", ["2.5M", "4M", "2M", "1M"], index=0)
 
 cols = st.columns(3)
 status_file = dl.read_status()
@@ -131,12 +132,16 @@ alive = dl.daemon_alive(status_file)
 running = bool(status_file) and status_file.get("state") == "running"
 for col, (key, label) in zip(cols, dl.SCENARIOS.items()):
     if col.button(label, use_container_width=True, disabled=running or not alive, key=f"btn_{key}"):
+        ss.history.clear()
+        ss.blocked_log.clear()
+        ss.active_blocked.clear()
         cmd = dl.send_command(key, duration=int(duration), attack_type=attack_type,
-                              attack_rate=int(attack_rate), attack_duration=int(attack_duration))
+                              attack_rate=int(attack_rate), attack_duration=int(attack_duration),
+                              camera_bandwidth=camera_bandwidth)
         st.toast(f"Đã gửi lệnh {label} (mã {cmd['id']})")
 if not alive:
     st.warning("Chưa thấy scenario_daemon đang chạy nên các nút bị khóa. Tại dấu nhắc `mininet>` chạy:  "
-               "`py import sys; sys.path.insert(0,'..')`  rồi  "
+               "`py import sys; sys.path.insert(0, '.')`  rồi  "
                "`py from Web.experiments.scenario_daemon import serve; serve(net)`")
 
 
